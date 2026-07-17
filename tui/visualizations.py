@@ -6,13 +6,13 @@ from core.board import BoardState
 from tui.renderer import TUI
 
 
-def render_board_state(tui: TUI, state: BoardState) -> None:
+def render_board_state(renderer: TUI, state: BoardState) -> None:
     """Render a board state with the active piece shown as next."""
-    tui.render(state, state.curr_piece.kind, 0, 0, 0)
+    renderer(state, state.curr_piece.kind, 0, 0, 0)
 
 
 def cycle_board_states(
-        tui: TUI,
+        renderer: TUI,
         states: list[BoardState],
         tick_speed: float,
 ) -> None:
@@ -24,5 +24,5 @@ def cycle_board_states(
 
     while True:
         for state in states:
-            render_board_state(tui, state)
+            render_board_state(renderer, state)
             time.sleep(tick_speed)
