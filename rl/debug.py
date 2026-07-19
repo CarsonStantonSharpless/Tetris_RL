@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import curses
 
-from rl.possible_moves import find_possible_states
+from rl.policy.possible_moves import find_possible_states
 from core.board import Board, BoardState
 from tui.renderer import TUI
 from tui.visualizations import cycle_board_states
