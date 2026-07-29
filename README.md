@@ -17,9 +17,23 @@ From the project directory:
 python3 run.py
 ```
 
-The game will try to resize compatible terminals to fit the interface. If your terminal does not support that, enlarge it manually before starting.
+This runs the random policy with the DFS placer. Use `python3 run.py --help` to
+control the player, display, timing, random seed, run length, and game-state
+output.
+
+For example, run headless for 1,000 ticks and save the game:
+
+```bash
+python3 run.py --no-display --max-ticks 1000 --filepath game.trs
+```
+
+The display will try to resize compatible terminals to fit the interface. If
+your terminal does not support that, enlarge it manually before starting.
 
 ## Controls
+
+Movement keys are enabled with `--interactive`; pause, restart, and quit remain
+available in the default RL-controlled display.
 
 | Key | Action |
 | --- | --- |
@@ -35,7 +49,7 @@ The game will try to resize compatible terminals to fit the interface. If your t
 ## Project Files
 
 ```text
-run.py           starts the curses application
+run.py           configures and starts the RL player
 core/engine.py   handles timing, input, scoring, levels, and game flow
 core/board.py    owns the grid, collision checks, locking, and line clears
 core/pieces.py   defines tetromino shapes and rotation state

@@ -9,7 +9,7 @@ def DFS_placer(
     dest: tuple[int, int],
     rotation: int = 0,
 ) -> list[str]:
-    piece = board.curr_piece
+    piece = Piece(board.curr_piece.definition, board.curr_piece.orientation)
     path: list[str] = []
 
     command = "k" if rotation >= 0 else "j"
@@ -33,9 +33,9 @@ def DFS_placer(
             return path
 
         for command, next_pos in (
-            ("s", (pos[0] + 1, pos[1])),
             ("a", (pos[0], pos[1] - 1)),
             ("d", (pos[0], pos[1] + 1)),
+            ("s", (pos[0] + 1, pos[1])),
         ):
             if next_pos in visited:
                 continue

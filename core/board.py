@@ -13,6 +13,30 @@ class BoardState:
     curr_piece: Piece
     piece_pos: tuple[int, int]
 
+    @property
+    def locked(self) -> np.ndarray:
+        """Return a copy of the grid with the active piece drawn into it."""
+        combined = self.grid.copy()
+
+        row, col = self.piece_pos
+        piece_id = PIECE_TO_ID[self.curr_piece.kind]
+
+        for local_row, shape_row in enumerate(self.curr_piece.shape):
+            for local_col, value in enumerate(shape_row):
+                if value == 0:
+                    continue
+
+                grid_row = row + local_row
+                grid_col = col + local_col
+
+                if (
+                    0 <= grid_row < combined.shape[0]
+                    and 0 <= grid_col < combined.shape[1]
+                ):
+                    combined[grid_row, grid_col] = piece_id
+
+        return combined
+
 class Board:
     def __init__(self) -> None:
         # stores locked pieces; zero is empty and each other value is a piece id
