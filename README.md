@@ -49,11 +49,17 @@ available in the default RL-controlled display.
 ## Project Files
 
 ```text
-run.py           configures and starts the RL player
-core/engine.py   handles timing, input, scoring, levels, and game flow
-core/board.py    owns the grid, collision checks, locking, and line clears
-core/pieces.py   defines tetromino shapes and rotation state
-tui/renderer.py  draws the game interface in the terminal
+run.py                 configures and starts the player
+core/                  Tetris rules and engine
+agents/                policies, placements, and player control
+training/genetic/      genetic optimizer code
+training/reinforcement/ reinforcement learning code
+models/                parameterized heuristic and neural models
+storage/               game, checkpoint, and metric persistence
+visualization/         board, game, and learning visualizations
+tui/                   live terminal renderer
+tests/                 automated tests
+runs/                  generated experiment output
 ```
 
 ## Headless / RL use

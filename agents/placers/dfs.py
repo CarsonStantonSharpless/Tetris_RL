@@ -4,7 +4,7 @@ from core.board import Board, BoardState
 from core.pieces import Piece
 
 
-def DFS_placer(
+def dfs_placer(
     board: BoardState,
     dest: tuple[int, int],
     rotation: int = 0,

@@ -2,13 +2,13 @@ import argparse
 import curses
 import random
 
+from agents.player import Placer, Player, Policy
 from core.engine import TICK
-from rl.player import Placer, Player, Policy
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the RL Tetris player.")
-    parser.add_argument("--policy", choices=["random","hueristic"], default="random")
+    parser = argparse.ArgumentParser(description="Run the Tetris player.")
+    parser.add_argument("--policy", choices=["random", "heuristic"], default="random")
     parser.add_argument("--placer", choices=["dfs"], default="dfs")
     parser.add_argument(
         "--display",
@@ -19,7 +19,7 @@ def parse_args() -> argparse.Namespace:
         "--interactive",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="allow keyboard moves alongside the RL player",
+        help="allow keyboard moves alongside the automated player",
     )
     parser.add_argument("--tick-speed", type=float, default=TICK)
     parser.add_argument("--max-ticks", type=int)

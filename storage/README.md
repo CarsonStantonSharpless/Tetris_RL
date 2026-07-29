@@ -1,9 +1,9 @@
 # Board State Storage
 
-`store.py` writes lists of `BoardState` objects to a small binary file.
+`games.py` writes lists of `BoardState` objects to a small binary file.
 
 ```python
-from core.store import read_board_states, write_board_states
+from storage.games import read_board_states, write_board_states
 
 write_board_states(states, "game.trs")
 states = read_board_states("game.trs")

@@ -1,15 +1,14 @@
 import numpy as np
 
 from core.board import BoardState
-from core.pieces import Piece
-from rl.policy.possible_moves import find_possible_states
+from agents.placements import find_possible_states
 
 
 """
 Credit to: https://codemyroad.wordpress.com/2013/04/14/tetris-ai-the-near-perfect-player/
 """
 
-def hueristic_policy(start_state: BoardState, harddrop: bool = True) -> BoardState:
+def heuristic_policy(start_state: BoardState, harddrop: bool = True) -> BoardState:
     poss_states: list[BoardState] = find_possible_states(start_state, harddrop)
 
     #simple in concept, evaluate each possible state, and give it a score, highest wins
@@ -26,10 +25,10 @@ def hueristic_policy(start_state: BoardState, harddrop: bool = True) -> BoardSta
 
 def evaluate(
         grid: np.ndarray,
-        alpha: float = .33,
-        beta: float = .5,
+        alpha: float = .3,
+        beta: float = .4,
         gamma: float = .1,
-        delta: float = .25,
+        delta: float = .2,
         epsilon: float = 0
         ) -> float:
 

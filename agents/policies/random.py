@@ -1,7 +1,7 @@
 import random
 
+from agents.placements import find_possible_states
 from core.board import BoardState
-from rl.policy.possible_moves import find_possible_states
 
 
 def random_policy(state: BoardState, harddrop: bool = True) -> BoardState:

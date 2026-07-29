@@ -4,21 +4,21 @@ from enum import IntEnum
 
 from core.board import BoardState
 from core.engine import Engine, EngineState, TICK
-from core.store import write_board_states
-from rl.placer.dfs_placer import DFS_placer
-from rl.policy.possible_moves import simulate_hard_drop
-from rl.policy.random_policy import random_policy
-from rl.policy.hueristic_policy import hueristic_policy
+from agents.placements import simulate_hard_drop
+from agents.placers.dfs import dfs_placer
+from agents.policies.heuristic import heuristic_policy
+from agents.policies.random import random_policy
+from storage.games import write_board_states
 
 
 class Policy(IntEnum):
     RANDOM = 1
-    HUERISTIC = 2
+    HEURISTIC = 2
 
 
 POLICIES = {
     Policy.RANDOM: random_policy,
-    Policy.HUERISTIC: hueristic_policy,
+    Policy.HEURISTIC: heuristic_policy,
 }
 
 
@@ -27,7 +27,7 @@ class Placer(IntEnum):
 
 
 PLACERS = {
-    Placer.DFS: DFS_placer,
+    Placer.DFS: dfs_placer,
 }
 
 

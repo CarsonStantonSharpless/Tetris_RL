@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import curses
 
-from rl.policy.possible_moves import find_possible_states
+from agents.placements import find_possible_states
 from core.board import Board, BoardState
 from tui.renderer import TUI
-from tui.visualizations import cycle_board_states
+from visualization.boards import cycle_board_states
 
 
 def visualize_hard_drops(
