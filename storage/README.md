@@ -21,3 +21,15 @@ uses 85 bytes; a state with an unchanged grid uses two.
 
 Files begin with `TRS1` and the number of stored states. The versioned header
 allows the format to change later without confusing old files.
+
+## Genetic Parameters
+
+`parameters.py` stores the captain and lieutenant from a genetic tournament as
+JSON and loads either parameter set:
+
+```python
+from storage.parameters import read_genetic_parameters, write_genetic_parameters
+
+write_genetic_parameters(captain, lieutenant, "leaders.json")
+captain_parameters = read_genetic_parameters("leaders.json")
+```

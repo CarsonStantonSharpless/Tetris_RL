@@ -2,20 +2,43 @@ import numpy as np
 
 from core.board import BoardState
 from agents.placements import find_possible_states
+from storage.parameters import read_genetic_parameters
 
 
 """
 Credit to: https://codemyroad.wordpress.com/2013/04/14/tetris-ai-the-near-perfect-player/
 """
 
-def heuristic_policy(start_state: BoardState, harddrop: bool = True) -> BoardState:
+DEFAULT_ALPHA = .3
+DEFAULT_BETA = .4
+DEFAULT_GAMMA = .1
+DEFAULT_DELTA = .2
+DEFAULT_EPSILON = 0.0
+
+
+def heuristic_policy(
+    start_state: BoardState,
+    harddrop: bool = True,
+    alpha: float = DEFAULT_ALPHA,
+    beta: float = DEFAULT_BETA,
+    gamma: float = DEFAULT_GAMMA,
+    delta: float = DEFAULT_DELTA,
+    epsilon: float = DEFAULT_EPSILON,
+) -> BoardState:
     poss_states: list[BoardState] = find_possible_states(start_state, harddrop)
 
     #simple in concept, evaluate each possible state, and give it a score, highest wins
     max_score: float = -float('inf')
     best_state: BoardState | None = None
     for state in poss_states:
-        score: float = evaluate(state.locked)
+        score: float = evaluate(
+            state.locked,
+            alpha,
+            beta,
+            gamma,
+            delta,
+            epsilon,
+        )
         if score > max_score:
             max_score = score
             best_state = state
@@ -23,13 +46,27 @@ def heuristic_policy(start_state: BoardState, harddrop: bool = True) -> BoardSta
     assert(best_state is not None)
     return best_state
 
+
+def genetic_heuristic_policy(
+    start_state: BoardState,
+    filepath: str | None = None,
+    harddrop: bool = True,
+) -> BoardState:
+    parameters = (
+        read_genetic_parameters(filepath)
+        if filepath is not None
+        else {}
+    )
+    return heuristic_policy(start_state, harddrop, **parameters)
+
+
 def evaluate(
         grid: np.ndarray,
-        alpha: float = .3,
-        beta: float = .4,
-        gamma: float = .1,
-        delta: float = .2,
-        epsilon: float = 0
+        alpha: float = DEFAULT_ALPHA,
+        beta: float = DEFAULT_BETA,
+        gamma: float = DEFAULT_GAMMA,
+        delta: float = DEFAULT_DELTA,
+        epsilon: float = DEFAULT_EPSILON,
         ) -> float:
 
     return (

@@ -27,6 +27,28 @@ For example, run headless for 1,000 ticks and save the game:
 python3 run.py --no-display --max-ticks 1000 --filepath game.trs
 ```
 
+Heuristic weights are optional and can be overridden individually:
+
+```bash
+python3 run.py --policy heuristic --alpha .3 --beta .4 --gamma .1 --delta .2
+```
+
+Run a genetic tournament and save its captain and lieutenant:
+
+```bash
+python3 -m training.genetic.tournament 10 100 --filepath leaders.json
+```
+
+Progress bars and leader fitness are shown by default; pass `--no-visualize` to
+disable them. The saved captain can then drive the genetic heuristic policy:
+
+```bash
+python3 run.py --policy genetic-heuristic --params-file leaders.json
+```
+
+Without `--params-file`, the genetic heuristic uses the regular heuristic's
+default weights. Loading saved parameters never runs a tournament.
+
 The display will try to resize compatible terminals to fit the interface. If
 your terminal does not support that, enlarge it manually before starting.
 

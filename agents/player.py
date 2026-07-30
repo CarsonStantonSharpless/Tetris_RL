@@ -6,7 +6,7 @@ from core.board import BoardState
 from core.engine import Engine, EngineState, TICK
 from agents.placements import simulate_hard_drop
 from agents.placers.dfs import dfs_placer
-from agents.policies.heuristic import heuristic_policy
+from agents.policies.heuristic import genetic_heuristic_policy, heuristic_policy
 from agents.policies.random import random_policy
 from storage.games import write_board_states
 
@@ -14,11 +14,13 @@ from storage.games import write_board_states
 class Policy(IntEnum):
     RANDOM = 1
     HEURISTIC = 2
+    GENETIC_HEURISTIC = 3
 
 
 POLICIES = {
     Policy.RANDOM: random_policy,
     Policy.HEURISTIC: heuristic_policy,
+    Policy.GENETIC_HEURISTIC: genetic_heuristic_policy,
 }
 
 
@@ -41,8 +43,16 @@ class Player:
         stdscr: curses.window | None = None,
         filepath: str | None = None,
         tick_speed: float = TICK,
+        policy_params: dict[str, float | str] | None = None,
     ) -> None:
+        if policy_params and policy not in (
+            Policy.HEURISTIC,
+            Policy.GENETIC_HEURISTIC,
+        ):
+            raise ValueError("policy_params require a heuristic policy")
+
         self.policy = POLICIES[policy]
+        self.policy_params = dict(policy_params or {})
         self.placer = PLACERS[placer]
         self.interactive = interactive
         self.filepath = filepath
@@ -60,7 +70,7 @@ class Player:
         self.states = [self.engine.state.board_state] if filepath else []
 
     def _plan(self, state: BoardState) -> None:
-        self.target = self.policy(state)
+        self.target = self.policy(state, **self.policy_params)
 
         try:
             self.path = deque(self._place(state))
