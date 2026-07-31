@@ -10,10 +10,10 @@ Credit to: https://codemyroad.wordpress.com/2013/04/14/tetris-ai-the-near-perfec
 """
 
 DEFAULT_ALPHA = .3
-DEFAULT_BETA = .4
+DEFAULT_BETA = .3
 DEFAULT_GAMMA = .1
 DEFAULT_DELTA = .2
-DEFAULT_EPSILON = 0.0
+DEFAULT_EPSILON = .1
 
 
 def heuristic_policy(
@@ -74,7 +74,7 @@ def evaluate(
         beta*complete_lines(grid) +
         gamma*bumpiness(grid) +
         delta*holes(grid) +
-        epsilon*tetris(grid)
+        epsilon*tetris_setup(grid)
     )
 
 
@@ -95,8 +95,10 @@ def holes(grid: np.ndarray) -> float:
     covered = np.maximum.accumulate(filled, axis=0)
     return -float(np.count_nonzero(covered & ~filled)) / grid.size
 
-def tetris(grid: np.ndarray) -> float:
-    return float(np.all(grid[:, -1] == 0))
+def tetris_setup(grid: np.ndarray, well_col: int = -1) -> float:
+    other_cols = np.delete(grid, well_col, axis=1)
+    ready_rows = np.all(other_cols != 0, axis=1) & (grid[:, well_col] == 0)
+    return min(float(np.count_nonzero(ready_rows)), 4.0) / 4.0
 
 
 def column_heights(grid: np.ndarray) -> np.ndarray:

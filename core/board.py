@@ -148,26 +148,32 @@ class Board:
         grid, piece, pos = board.grid, board.curr_piece, board.piece_pos
         row, col = pos
         shape = piece.shape
+        occupied_rows, occupied_cols = np.nonzero(shape)
 
-        # checks every occupied square against the board edges and locked pieces
-        for local_row, shape_row in enumerate(shape):
-            for local_col, value in enumerate(shape_row):
-                if value == 0:
-                    continue
+        top = int(occupied_rows.min())
+        bottom = int(occupied_rows.max()) + 1
+        left = int(occupied_cols.min())
+        right = int(occupied_cols.max()) + 1
 
-                grid_row = row + local_row
-                grid_col = col + local_col
+        grid_top = row + top
+        grid_bottom = row + bottom
+        grid_left = col + left
+        grid_right = col + right
 
-                if grid_col < 0 or grid_col >= grid.shape[1]:
-                    return False
+        if (
+            grid_top < 0
+            or grid_bottom > grid.shape[0]
+            or grid_left < 0
+            or grid_right > grid.shape[1]
+        ):
+            return False
 
-                if grid_row < 0 or grid_row >= grid.shape[0]:
-                    return False
-
-                if grid[grid_row, grid_col] != 0:
-                    return False
-
-        return True
+        shape_window = shape[top:bottom, left:right] != 0
+        grid_window = grid[
+            grid_top:grid_bottom,
+            grid_left:grid_right,
+        ]
+        return not np.any(grid_window[shape_window] != 0)
 
     def lock_board(self) -> None:
         piece, pos = self.require_active_piece()

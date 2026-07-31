@@ -44,6 +44,7 @@ class Player:
         filepath: str | None = None,
         tick_speed: float = TICK,
         policy_params: dict[str, float | str] | None = None,
+        instant_placement: bool = False,
     ) -> None:
         if policy_params and policy not in (
             Policy.HEURISTIC,
@@ -56,12 +57,14 @@ class Player:
         self.placer = PLACERS[placer]
         self.interactive = interactive
         self.filepath = filepath
+        self.instant_placement = instant_placement
 
         self.engine = Engine(
             stdscr=stdscr,
             render=display,
             tick_speed=tick_speed,
             auto_run=False,
+            instant_placement=instant_placement,
         )
 
         self.path: deque[str] = deque()
@@ -71,6 +74,9 @@ class Player:
 
     def _plan(self, state: BoardState) -> None:
         self.target = self.policy(state, **self.policy_params)
+        if self.instant_placement:
+            self.path.clear()
+            return
 
         try:
             self.path = deque(self._place(state))
@@ -97,6 +103,13 @@ class Player:
         if active_piece is not self.active_piece:
             self.active_piece = active_piece
             self._plan(board_state)
+
+        if self.instant_placement:
+            assert self.target is not None
+            state = self.engine.step(placement=self.target)
+            if self.filepath:
+                self.states.append(state.board_state)
+            return state
 
         manual = self.engine.get_input()
         if not self.interactive:

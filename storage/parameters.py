@@ -5,15 +5,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from training.genetic.fighter import Parameters
+    from training.genetic.fighter import Genome
 
 
 PARAMETER_NAMES = ("alpha", "beta", "gamma", "delta", "epsilon")
 
 
 def write_genetic_parameters(
-    captain: Parameters,
-    lieutenant: Parameters,
+    captain: Genome,
+    lieutenant: Genome,
     filepath: str,
 ) -> None:
     """Save the two strongest parameter sets as JSON."""
@@ -53,7 +53,7 @@ def read_genetic_parameters(
         ) from error
 
 
-def _parameter_dict(parameters: Parameters) -> dict[str, float]:
+def _parameter_dict(parameters: Genome) -> dict[str, float]:
     return {
         name: float(getattr(parameters, name))
         for name in PARAMETER_NAMES

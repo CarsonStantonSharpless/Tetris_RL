@@ -8,6 +8,7 @@ A quick terminal based tetris implementation. This was a nice weekend project th
 
 - Python 3.10 or newer
 - `numpy`
+- `tqdm`
 
 ## Run
 
@@ -27,6 +28,15 @@ For example, run headless for 1,000 ticks and save the game:
 python3 run.py --no-display --max-ticks 1000 --filepath game.trs
 ```
 
+For training or evaluation, apply each policy-selected placement in one tick:
+
+```bash
+python3 run.py --no-display --instant-placement --max-ticks 1000
+```
+
+Instant placement bypasses movement planning and soft-drop points. Each tick
+locks one piece, clears rows, updates the score, and spawns the next piece.
+
 Heuristic weights are optional and can be overridden individually:
 
 ```bash
@@ -36,11 +46,15 @@ python3 run.py --policy heuristic --alpha .3 --beta .4 --gamma .1 --delta .2
 Run a genetic tournament and save its captain and lieutenant:
 
 ```bash
-python3 -m training.genetic.tournament 10 100 --filepath leaders.json
+python3 -m training.genetic.run_tournament 10 100 --filepath leaders.json
 ```
 
 Progress bars and leader fitness are shown by default; pass `--no-visualize` to
-disable them. The saved captain can then drive the genetic heuristic policy:
+disable them. Episode evaluation uses one process per CPU by default; pass
+`--workers 1` for serial evaluation or `--workers N` to set a limit. The saved
+captain can then drive the genetic heuristic policy. Episodes are capped at
+200 piece placements during the GA and the finalists are re-evaluated at 1,000.
+Change the finalist horizon with `--max-ticks N`; GA rounds use one-fifth of it.
 
 ```bash
 python3 run.py --policy genetic-heuristic --params-file leaders.json

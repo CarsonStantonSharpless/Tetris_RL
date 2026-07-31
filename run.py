@@ -30,6 +30,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--tick-speed", type=float, default=TICK)
     parser.add_argument("--max-ticks", type=int)
+    parser.add_argument(
+        "--instant-placement",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="apply each policy placement in one tick (headless only)",
+    )
     parser.add_argument("--filepath", help="save board states to this .trs file")
     parser.add_argument(
         "--params-file",
@@ -71,6 +77,7 @@ def run(args: argparse.Namespace, stdscr=None) -> None:
         filepath=args.filepath,
         tick_speed=args.tick_speed,
         policy_params=params,
+        instant_placement=args.instant_placement,
     )
     player.start(args.max_ticks)
 

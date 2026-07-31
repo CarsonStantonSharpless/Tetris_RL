@@ -69,22 +69,30 @@ def simulate_hard_drop(
         piece: Piece,
         pos: tuple[int,int]
 ) -> BoardState:
-    """
-    Simulate the hard drop from a position
-    """
-     
-    curr_state: BoardState = BoardState(
-        grid, piece, pos
-    )
-    
-    next_state: BoardState = BoardState(
-          grid, piece, (pos[0]+1, pos[1])
-    )
+    """Return the resting state without simulating intermediate rows."""
+    start_row, start_col = pos
+    landing_row = grid.shape[0]
+    occupied_rows, occupied_cols = np.nonzero(piece.shape)
 
-    while (Board.is_legal_position(next_state)):
-        curr_state = next_state
-        next_state: BoardState = BoardState(
-            grid, piece, (next_state.piece_pos[0]+1, pos[1])
+    for local_row, local_col in zip(
+        occupied_rows,
+        occupied_cols,
+        strict=True,
+    ):
+        grid_col = start_col + int(local_col)
+        first_row_below = start_row + int(local_row) + 1
+        filled_below = np.flatnonzero(
+            grid[first_row_below:, grid_col]
         )
-    
-    return curr_state
+
+        obstacle_row = (
+            first_row_below + int(filled_below[0])
+            if filled_below.size
+            else grid.shape[0]
+        )
+        landing_row = min(
+            landing_row,
+            obstacle_row - int(local_row) - 1,
+        )
+
+    return BoardState(grid, piece, (landing_row, start_col))

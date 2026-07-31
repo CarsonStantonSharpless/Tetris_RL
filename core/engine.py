@@ -5,7 +5,10 @@ import random
 import curses
 from dataclasses import dataclass
 
+import numpy as np
+
 from core.board import Board, BoardState
+from core.pieces import Piece
 from tui.renderer import TUI
 
 # sets the target update rate for both rendering and gravity
@@ -41,6 +44,7 @@ class Engine:
         render: bool = True,
         tick_speed: float = TICK,
         auto_run: bool | None = None,
+        instant_placement: bool = False,
     ) -> None:
         """Create a Tetris engine.
 
@@ -50,14 +54,19 @@ class Engine:
             tick_speed: Seconds per engine tick.
             auto_run: Start the interactive loop immediately. By default this
                 follows ``render``; headless engines are ready for ``step()``.
+            instant_placement: Allow a policy-selected final placement to be
+                locked and scored in one tick. This is only available headlessly.
         """
         if tick_speed <= 0:
             raise ValueError("tick_speed must be greater than zero")
+        if render and instant_placement:
+            raise ValueError("instant_placement requires render=False")
         if render and stdscr is None:
             raise ValueError("stdscr is required when render=True")
 
         self.stdscr = stdscr
         self.render_enabled = render
+        self.instant_placement = instant_placement
         self.tick_speed = tick_speed
         self.renderer = None
 
@@ -269,7 +278,50 @@ class Engine:
     def start_timer(self) -> None:
         self.timer += max(3, 48 - self.level * 7)
 
-    def step(self, inputs: list[str] | str = ()) -> EngineState:
+    def _lock_piece(self) -> None:
+        self.board.lock_board()
+
+        lines = self.board.clear_rows()
+        if lines:
+            self.handle_level(lines)
+            self.add_score(lines)
+
+        self.board.spawn_piece(self.grab_piece())
+        if self.board.game_over():
+            self.game_over()
+
+    def _place_immediately(self, placement: BoardState) -> None:
+        piece, _ = self.board.require_active_piece()
+
+        if placement.curr_piece.kind != piece.kind:
+            raise ValueError("placement must use the active piece")
+        if not np.array_equal(placement.grid, self.board.grid):
+            raise ValueError("placement must use the current locked grid")
+        if not Board.is_legal_position(placement):
+            raise ValueError("placement is not legal")
+
+        row, col = placement.piece_pos
+        below = BoardState(
+            placement.grid,
+            placement.curr_piece,
+            (row + 1, col),
+        )
+        if Board.is_legal_position(below):
+            raise ValueError("placement must be resting on the stack or floor")
+
+        self.board.curr_piece = Piece(
+            placement.curr_piece.definition,
+            placement.curr_piece.orientation,
+        )
+        self.board.piece_pos = placement.piece_pos
+        self._lock_piece()
+
+    def step(
+        self,
+        inputs: list[str] | str = (),
+        *,
+        placement: BoardState | None = None,
+    ) -> EngineState:
         if self.is_game_over:
             return self.state
 
@@ -279,6 +331,15 @@ class Engine:
         invalid = set(commands) - VALID_KEYS
         if invalid:
             raise ValueError(f"invalid command(s): {sorted(invalid)!r}")
+        if placement is not None:
+            if not self.instant_placement:
+                raise ValueError("placement requires instant_placement=True")
+            if commands:
+                raise ValueError("inputs and placement cannot be used together")
+
+            self._place_immediately(placement)
+            self.render()
+            return self.state
 
         soft_dropped = False
         if commands:
@@ -287,16 +348,7 @@ class Engine:
         if self.timer <= 0:
             if not soft_dropped:
                 if not self.board.lower_piece():
-                    self.board.lock_board()
-
-                    lines = self.board.clear_rows()
-                    if lines:
-                        self.handle_level(lines)
-                        self.add_score(lines)
-
-                    self.board.spawn_piece(self.grab_piece())
-                    if self.board.game_over():
-                        self.game_over()
+                    self._lock_piece()
 
             self.start_timer()
         else:
