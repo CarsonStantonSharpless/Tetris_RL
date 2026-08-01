@@ -276,7 +276,11 @@ class Engine:
         return soft_dropped
 
     def start_timer(self) -> None:
-        self.timer += max(3, 48 - self.level * 7)
+        self.timer += self.gravity_interval
+
+    @property
+    def gravity_interval(self) -> int:
+        return max(3, 48 - self.level * 7)
 
     def _lock_piece(self) -> None:
         self.board.lock_board()

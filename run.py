@@ -16,7 +16,7 @@ def parse_args() -> argparse.Namespace:
         choices=["random", "heuristic", "genetic-heuristic"],
         default="random",
     )
-    parser.add_argument("--placer", choices=["dfs"], default="dfs")
+    parser.add_argument("--placer", choices=["bfs", "dfs"], default="bfs")
     parser.add_argument(
         "--display",
         action=argparse.BooleanOptionalAction,

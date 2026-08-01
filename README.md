@@ -18,7 +18,7 @@ From the project directory:
 python3 run.py
 ```
 
-This runs the random policy with the DFS placer. Use `python3 run.py --help` to
+This runs the random policy with the BFS placer. Use `python3 run.py --help` to
 control the player, display, timing, random seed, run length, and game-state
 output.
 

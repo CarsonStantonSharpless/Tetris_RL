@@ -5,6 +5,7 @@ from enum import IntEnum
 from core.board import BoardState
 from core.engine import Engine, EngineState, TICK
 from agents.placements import simulate_hard_drop
+from agents.placers.bfs import bfs_placer
 from agents.placers.dfs import dfs_placer
 from agents.policies.heuristic import genetic_heuristic_policy, heuristic_policy
 from agents.policies.random import random_policy
@@ -26,10 +27,12 @@ POLICIES = {
 
 class Placer(IntEnum):
     DFS = 1
+    BFS = 2
 
 
 PLACERS = {
     Placer.DFS: dfs_placer,
+    Placer.BFS: bfs_placer,
 }
 
 
@@ -37,7 +40,7 @@ class Player:
     def __init__(
         self,
         policy: Policy = Policy.RANDOM,
-        placer: Placer = Placer.DFS,
+        placer: Placer = Placer.BFS,
         display: bool = True,
         interactive: bool = False,
         stdscr: curses.window | None = None,
@@ -54,6 +57,7 @@ class Player:
 
         self.policy = POLICIES[policy]
         self.policy_params = dict(policy_params or {})
+        self.placer_kind = placer
         self.placer = PLACERS[placer]
         self.interactive = interactive
         self.filepath = filepath
@@ -67,7 +71,7 @@ class Player:
             instant_placement=instant_placement,
         )
 
-        self.path: deque[str] = deque()
+        self.path: deque[str | None] = deque()
         self.target: BoardState | None = None
         self.active_piece = None
         self.states = [self.engine.state.board_state] if filepath else []
@@ -88,8 +92,16 @@ class Player:
             )
             self.path = deque(self._place(state))
 
-    def _place(self, state: BoardState) -> list[str]:
+    def _place(self, state: BoardState) -> list[str | None]:
         assert self.target is not None
+        if self.placer_kind is Placer.BFS:
+            return self.placer(
+                state,
+                self.target,
+                self.engine.timer,
+                self.engine.gravity_interval,
+            )
+
         rotation = (
             int(state.curr_piece.orientation)
             - int(self.target.curr_piece.orientation)
@@ -117,7 +129,9 @@ class Player:
 
         commands = manual
         if self.path:
-            commands.append(self.path.popleft())
+            command = self.path.popleft()
+            if command is not None:
+                commands.append(command)
 
         state = self.engine.step(commands)
         if self.filepath:
