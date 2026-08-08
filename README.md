@@ -63,6 +63,15 @@ python3 run.py --policy genetic-heuristic --params-file leaders.json
 Without `--params-file`, the genetic heuristic uses the regular heuristic's
 default weights. Loading saved parameters never runs a tournament.
 
+Train linear TD weights in parallel:
+
+```bash
+python3 -m training.reinforcement.run_linear_td 1000 --batch-size 8 --workers 8
+```
+
+Pass `--no-display` to disable the live loss plot. Results are written under
+`runs/`, including the loss plot, checkpoints, and winning weights.
+
 The display will try to resize compatible terminals to fit the interface. If
 your terminal does not support that, enlarge it manually before starting.
 

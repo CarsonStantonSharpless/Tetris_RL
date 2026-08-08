@@ -37,6 +37,14 @@ class BoardState:
 
         return combined
 
+
+@dataclass(frozen=True)
+class PlacementOutcome:
+    locked_grid: np.ndarray
+    grid: np.ndarray
+    lines_cleared: int
+    game_over: bool
+
 class Board:
     def __init__(self) -> None:
         # stores locked pieces; zero is empty and each other value is a piece id
@@ -200,23 +208,37 @@ class Board:
         return np.all(self.grid != 0, axis=1)
 
     def clear_rows(self) -> int:
-        full = self.full_rows()
-        n_cleared = int(np.count_nonzero(full))
+        self.grid, n_cleared = self._clear_grid(self.grid)
+        return n_cleared
 
-        if n_cleared == 0:
-            return 0
+    @staticmethod
+    def simulate_placement(state: BoardState) -> PlacementOutcome:
+        """Lock and clear a candidate placement without changing the board."""
+        if not Board.is_legal_position(state):
+            raise ValueError("cannot simulate an illegal placement")
 
-        # moves surviving rows down and fills the top with empty rows
-        remaining = self.grid[~full]
-
-        empty_rows = np.zeros(
-            (n_cleared, self.grid.shape[1]),
-            dtype=self.grid.dtype,
+        locked_grid = state.locked
+        grid, lines_cleared = Board._clear_grid(locked_grid)
+        return PlacementOutcome(
+            locked_grid=locked_grid,
+            grid=grid,
+            lines_cleared=lines_cleared,
+            game_over=bool(np.any(grid[0:2, :] != 0)),
         )
 
-        self.grid = np.vstack((empty_rows, remaining))
+    @staticmethod
+    def _clear_grid(grid: np.ndarray) -> tuple[np.ndarray, int]:
+        full = np.all(grid != 0, axis=1)
+        n_cleared = int(np.count_nonzero(full))
+        if n_cleared == 0:
+            return grid, 0
 
-        return n_cleared
+        remaining = grid[~full]
+        empty_rows = np.zeros(
+            (n_cleared, grid.shape[1]),
+            dtype=grid.dtype,
+        )
+        return np.vstack((empty_rows, remaining)), n_cleared
 
     def game_over(self) -> bool:
         return np.any(self.grid[0:2, :] != 0)

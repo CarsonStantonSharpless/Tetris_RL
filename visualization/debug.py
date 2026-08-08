@@ -31,7 +31,5 @@ def main(stdscr):
 
     visualize_hard_drops(board.board, renderer)
 
-
-
 if __name__ == "__main__":
     curses.wrapper(main)

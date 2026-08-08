@@ -4,3 +4,4 @@ __pycache__/
 runs/
 *.trs
 *.json
+models/

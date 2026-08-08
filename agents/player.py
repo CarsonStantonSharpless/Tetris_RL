@@ -2,8 +2,8 @@ from collections import deque
 import curses
 from enum import IntEnum
 
-from core.board import BoardState
-from core.engine import Engine, EngineState, TICK
+from core.board import BoardState, PlacementOutcome
+from core.engine import Engine, EngineState, PlacementStep, TICK
 from agents.placements import simulate_hard_drop
 from agents.placers.bfs import bfs_placer
 from agents.placers.dfs import dfs_placer
@@ -75,6 +75,23 @@ class Player:
         self.target: BoardState | None = None
         self.active_piece = None
         self.states = [self.engine.state.board_state] if filepath else []
+
+    @property
+    def state(self) -> EngineState:
+        return self.engine.state
+
+    def possible_placements(self) -> list[BoardState]:
+        return self.engine.possible_placements()
+
+    def simulate_placement(self, placement: BoardState) -> PlacementOutcome:
+        return self.engine.simulate_placement(placement)
+
+    def place(self, placement: BoardState) -> PlacementStep:
+        return self.engine.place(placement)
+
+    def restart(self) -> EngineState:
+        self.engine.restart()
+        return self.engine.state
 
     def _plan(self, state: BoardState) -> None:
         self.target = self.policy(state, **self.policy_params)

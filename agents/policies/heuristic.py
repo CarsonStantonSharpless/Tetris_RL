@@ -2,7 +2,7 @@ import numpy as np
 
 from core.board import BoardState
 from agents.placements import find_possible_states
-from storage.parameters import read_genetic_parameters
+from storage.parameters import read_heuristic_parameters
 
 
 """
@@ -24,7 +24,12 @@ def heuristic_policy(
     gamma: float = DEFAULT_GAMMA,
     delta: float = DEFAULT_DELTA,
     epsilon: float = DEFAULT_EPSILON,
+    filepath: str | None = None,
 ) -> BoardState:
+    if filepath is not None:
+        alpha, beta, gamma, delta, epsilon = read_heuristic_parameters(
+            filepath
+        ).values()
     poss_states: list[BoardState] = find_possible_states(start_state, harddrop)
 
     #simple in concept, evaluate each possible state, and give it a score, highest wins
@@ -52,12 +57,7 @@ def genetic_heuristic_policy(
     filepath: str | None = None,
     harddrop: bool = True,
 ) -> BoardState:
-    parameters = (
-        read_genetic_parameters(filepath)
-        if filepath is not None
-        else {}
-    )
-    return heuristic_policy(start_state, harddrop, **parameters)
+    return heuristic_policy(start_state, harddrop, filepath=filepath)
 
 
 def evaluate(
@@ -77,10 +77,18 @@ def evaluate(
         epsilon*tetris_setup(grid)
     )
 
+def evaluate_features(grid: np.ndarray) -> np.ndarray:
+    return np.array([
+        aggregate_height(grid),
+        complete_lines(grid),
+        bumpiness(grid),
+        holes(grid),
+        tetris_setup(grid)
+    ])
 
 def aggregate_height(grid: np.ndarray) -> float:
     heights = column_heights(grid)
-    return 1 - (float(heights.sum()) / (20*10))
+    return max(0.0, 1 - (float(heights.sum()) / (20*10)))
 
 def complete_lines(grid: np.ndarray) -> float:
     return float(np.all(grid != 0, axis=1).sum()) / 4
@@ -88,12 +96,12 @@ def complete_lines(grid: np.ndarray) -> float:
 def bumpiness(grid: np.ndarray) -> float:
     heights = column_heights(grid)
     maximum = (grid.shape[1] - 1) * grid.shape[0]
-    return -np.abs(np.diff(heights)).sum() / maximum
+    return 1 - float(np.abs(np.diff(heights)).sum()) / maximum
 
 def holes(grid: np.ndarray) -> float:
     filled = grid != 0
     covered = np.maximum.accumulate(filled, axis=0)
-    return -float(np.count_nonzero(covered & ~filled)) / grid.size
+    return 1 - float(np.count_nonzero(covered & ~filled)) / grid.size
 
 def tetris_setup(grid: np.ndarray, well_col: int = -1) -> float:
     other_cols = np.delete(grid, well_col, axis=1)

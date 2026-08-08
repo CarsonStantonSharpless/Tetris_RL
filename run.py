@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--filepath", help="save board states to this .trs file")
     parser.add_argument(
         "--params-file",
-        help="captain/lieutenant JSON file for the genetic heuristic policy",
+        help="saved genetic or trained heuristic weights",
     )
     parser.add_argument("--seed", type=int)
     heuristic = parser.add_argument_group("heuristic parameters")
@@ -65,8 +65,11 @@ def run(args: argparse.Namespace, stdscr=None) -> None:
         args.policy != "heuristic"
     ):
         raise SystemExit("heuristic parameters require --policy heuristic")
-    if args.params_file is not None and args.policy != "genetic-heuristic":
-        raise SystemExit("--params-file requires --policy genetic-heuristic")
+    if args.params_file is not None and args.policy not in (
+        "heuristic",
+        "genetic-heuristic",
+    ):
+        raise SystemExit("--params-file requires a heuristic policy")
 
     player = Player(
         policy=Policy[args.policy.replace("-", "_").upper()],

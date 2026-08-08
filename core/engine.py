@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from core.board import Board, BoardState
+from core.board import Board, BoardState, PlacementOutcome
 from core.pieces import Piece
 from tui.renderer import TUI
 
@@ -24,6 +24,14 @@ class EngineState:
     board_state: BoardState
     next_piece: str
     score: int
+
+
+@dataclass(frozen=True)
+class PlacementStep:
+    state: EngineState
+    afterstate: PlacementOutcome
+    reward: int
+    done: bool
 
 
 class Engine:
@@ -94,6 +102,29 @@ class Engine:
             board_state=self.board.board,
             next_piece=self.next_piece(),
             score=self.score,
+        )
+
+    def possible_placements(self) -> list[BoardState]:
+        """Return every legal resting placement for the current piece."""
+        if self.is_game_over:
+            return []
+        from agents.placements import find_possible_states
+
+        return find_possible_states(self.state.board_state)
+
+    def simulate_placement(self, placement: BoardState) -> PlacementOutcome:
+        return Board.simulate_placement(placement)
+
+    def place(self, placement: BoardState) -> PlacementStep:
+        """Apply one placement and expose the transition needed by RL."""
+        afterstate = self.simulate_placement(placement)
+        score_before = self.score
+        state = self.step(placement=placement)
+        return PlacementStep(
+            state=state,
+            afterstate=afterstate,
+            reward=state.score - score_before,
+            done=self.is_game_over,
         )
 
     def restart(self) -> None:
