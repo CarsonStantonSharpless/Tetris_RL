@@ -33,3 +33,11 @@ from storage.parameters import read_genetic_parameters, write_genetic_parameters
 write_genetic_parameters(captain, lieutenant, "leaders.json")
 captain_parameters = read_genetic_parameters("leaders.json")
 ```
+
+## Double DQN Models
+
+`dqn.py` writes a compact latest playable `model.pt`, a protected
+`best_model.pt` selected by fixed-seed evaluation, and full training
+checkpoints. The latter also contain the target network, optimizer, replay
+buffer, random state, hyperparameters, and best-model record, so they can
+resume a Double DQN run exactly where the prior checkpoint stopped.

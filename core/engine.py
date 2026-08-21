@@ -53,6 +53,7 @@ class Engine:
         tick_speed: float = TICK,
         auto_run: bool | None = None,
         instant_placement: bool = False,
+        seed: int | None = None,
     ) -> None:
         """Create a Tetris engine.
 
@@ -64,6 +65,7 @@ class Engine:
                 follows ``render``; headless engines are ready for ``step()``.
             instant_placement: Allow a policy-selected final placement to be
                 locked and scored in one tick. This is only available headlessly.
+            seed: Optional private random seed for deterministic piece bags.
         """
         if tick_speed <= 0:
             raise ValueError("tick_speed must be greater than zero")
@@ -75,6 +77,7 @@ class Engine:
         self.stdscr = stdscr
         self.render_enabled = render
         self.instant_placement = instant_placement
+        self.random = random.Random(seed) if seed is not None else None
         self.tick_speed = tick_speed
         self.renderer = None
 
@@ -127,7 +130,9 @@ class Engine:
             done=self.is_game_over,
         )
 
-    def restart(self) -> None:
+    def restart(self, seed: int | None = None) -> None:
+        if seed is not None:
+            self.random = random.Random(seed)
         self.score = 0
         self.board = Board()
         self.ticks = 0
@@ -215,7 +220,10 @@ class Engine:
 
     def fill_bag(self) -> None:
         self.piece_bag = ["O", "I", "T", "L", "J", "S", "Z"]
-        random.shuffle(self.piece_bag)
+        if self.random is None:
+            random.shuffle(self.piece_bag)
+        else:
+            self.random.shuffle(self.piece_bag)
 
     def next_piece(self) -> str:
         if not self.piece_bag:

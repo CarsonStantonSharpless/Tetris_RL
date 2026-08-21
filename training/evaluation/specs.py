@@ -41,3 +41,22 @@ class RandomSpec:
             display=False,
             instant_placement=True,
         )
+
+
+@dataclass(frozen=True)
+class DQNPolicySpec:
+    """Serializable instructions for evaluating a saved DQN model."""
+
+    filepath: str
+    device: str = "cpu"
+
+    def build_player(self) -> Player:
+        return Player(
+            policy=Policy.DQN,
+            display=False,
+            instant_placement=True,
+            policy_params={
+                "filepath": self.filepath,
+                "device": self.device,
+            },
+        )

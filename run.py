@@ -13,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Tetris player.")
     parser.add_argument(
         "--policy",
-        choices=["random", "heuristic", "genetic-heuristic"],
+        choices=["random", "heuristic", "genetic-heuristic", "dqn"],
         default="random",
     )
     parser.add_argument("--placer", choices=["bfs", "dfs"], default="bfs")
@@ -39,7 +39,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--filepath", help="save board states to this .trs file")
     parser.add_argument(
         "--params-file",
-        help="saved genetic or trained heuristic weights",
+        help="saved heuristic weights or a DQN model/checkpoint",
+    )
+    parser.add_argument(
+        "--device",
+        default="auto",
+        help="DQN inference device: auto, cpu, mps, or cuda",
     )
     parser.add_argument("--seed", type=int)
     heuristic = parser.add_argument_group("heuristic parameters")
@@ -56,6 +61,8 @@ def policy_params(args: argparse.Namespace) -> dict[str, float | str]:
     }
     if args.params_file is not None:
         params["filepath"] = args.params_file
+    if args.policy == "dqn":
+        params["device"] = args.device
     return params
 
 
@@ -68,8 +75,11 @@ def run(args: argparse.Namespace, stdscr=None) -> None:
     if args.params_file is not None and args.policy not in (
         "heuristic",
         "genetic-heuristic",
+        "dqn",
     ):
-        raise SystemExit("--params-file requires a heuristic policy")
+        raise SystemExit("--params-file requires a heuristic or DQN policy")
+    if args.policy == "dqn" and args.params_file is None:
+        raise SystemExit("--policy dqn requires --params-file")
 
     player = Player(
         policy=Policy[args.policy.replace("-", "_").upper()],

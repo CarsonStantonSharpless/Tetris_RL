@@ -9,6 +9,14 @@ A quick terminal based tetris implementation. This was a nice weekend project th
 - Python 3.10 or newer
 - `numpy`
 - `tqdm`
+- `matplotlib`
+- `torch` (for Double DQN training and inference)
+
+Install them with:
+
+```bash
+python3 -m pip install -r requirements.txt
+```
 
 ## Run
 
@@ -74,6 +82,42 @@ Pass `--no-display` to disable the live loss plot. Results are written under
 
 The display will try to resize compatible terminals to fit the interface. If
 your terminal does not support that, enlarge it manually before starting.
+
+## Double DQN
+
+The Double DQN learns from the same instant-placement `Player` interface used
+by the heuristic trainer. Its compact convolutional `DQN` scores every legal
+placement's afterstate, current piece, preview piece, and level. Train
+headlessly with:
+
+```bash
+python3 -m training.reinforcement.run_double_dqn 10000 --no-display
+```
+
+Training keeps the game's normal score reward and adds a `-1000` terminal
+penalty when a placement causes game over. Override it with
+`--terminal-penalty 0` to disable that training-only penalty.
+
+Each run writes `training.png` (loss, score, exploration, Q values, replay
+size, and evaluation score), the most-recent playable `model.pt`, and a
+protected `best_model.pt` whenever fixed-seed evaluation reaches a new high.
+`latest.pt` and numbered checkpoints are resumable training state. Play the
+best saved model with:
+
+```bash
+python3 run.py --policy dqn --params-file runs/double_dqn_.../best_model.pt \
+  --no-display --instant-placement --max-ticks 1000
+```
+
+Resume training from the most recent full checkpoint:
+
+```bash
+python3 -m training.reinforcement.run_double_dqn 5000 \
+  --resume-from runs/double_dqn_.../latest.pt --no-display
+```
+
+For long headless runs, add `--plot-every 500` to avoid redrawing the plot
+after every episode while still saving regular progress snapshots.
 
 ## Controls
 

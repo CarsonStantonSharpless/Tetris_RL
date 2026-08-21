@@ -9,6 +9,7 @@ from agents.placers.bfs import bfs_placer
 from agents.placers.dfs import dfs_placer
 from agents.policies.heuristic import genetic_heuristic_policy, heuristic_policy
 from agents.policies.random import random_policy
+from agents.policies.dqn import dqn_policy
 from storage.games import write_board_states
 
 
@@ -16,12 +17,14 @@ class Policy(IntEnum):
     RANDOM = 1
     HEURISTIC = 2
     GENETIC_HEURISTIC = 3
+    DQN = 4
 
 
 POLICIES = {
     Policy.RANDOM: random_policy,
     Policy.HEURISTIC: heuristic_policy,
     Policy.GENETIC_HEURISTIC: genetic_heuristic_policy,
+    Policy.DQN: dqn_policy,
 }
 
 
@@ -48,12 +51,14 @@ class Player:
         tick_speed: float = TICK,
         policy_params: dict[str, float | str] | None = None,
         instant_placement: bool = False,
+        seed: int | None = None,
     ) -> None:
         if policy_params and policy not in (
             Policy.HEURISTIC,
             Policy.GENETIC_HEURISTIC,
+            Policy.DQN,
         ):
-            raise ValueError("policy_params require a heuristic policy")
+            raise ValueError("policy_params require a parameterized policy")
 
         self.policy = POLICIES[policy]
         self.policy_params = dict(policy_params or {})
@@ -69,6 +74,7 @@ class Player:
             tick_speed=tick_speed,
             auto_run=False,
             instant_placement=instant_placement,
+            seed=seed,
         )
 
         self.path: deque[str | None] = deque()
@@ -89,12 +95,17 @@ class Player:
     def place(self, placement: BoardState) -> PlacementStep:
         return self.engine.place(placement)
 
-    def restart(self) -> EngineState:
-        self.engine.restart()
+    def restart(self, seed: int | None = None) -> EngineState:
+        self.engine.restart(seed=seed)
         return self.engine.state
 
     def _plan(self, state: BoardState) -> None:
-        self.target = self.policy(state, **self.policy_params)
+        self.target = self.policy(
+            state,
+            next_piece=self.engine.next_piece(),
+            level=self.engine.level,
+            **self.policy_params,
+        )
         if self.instant_placement:
             self.path.clear()
             return

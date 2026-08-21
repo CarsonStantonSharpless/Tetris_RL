@@ -25,7 +25,10 @@ def heuristic_policy(
     delta: float = DEFAULT_DELTA,
     epsilon: float = DEFAULT_EPSILON,
     filepath: str | None = None,
+    next_piece: str | None = None,
+    level: int = 0,
 ) -> BoardState:
+    del next_piece, level
     if filepath is not None:
         alpha, beta, gamma, delta, epsilon = read_heuristic_parameters(
             filepath
@@ -56,8 +59,16 @@ def genetic_heuristic_policy(
     start_state: BoardState,
     filepath: str | None = None,
     harddrop: bool = True,
+    next_piece: str | None = None,
+    level: int = 0,
 ) -> BoardState:
-    return heuristic_policy(start_state, harddrop, filepath=filepath)
+    return heuristic_policy(
+        start_state,
+        harddrop,
+        filepath=filepath,
+        next_piece=next_piece,
+        level=level,
+    )
 
 
 def evaluate(
