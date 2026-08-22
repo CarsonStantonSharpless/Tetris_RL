@@ -29,6 +29,16 @@ def parse_args() -> argparse.Namespace:
         default=-1_000.0,
         help="raw reward added when a placement ends the game (default: -1000)",
     )
+    parser.add_argument(
+        "--heuristic-top-k",
+        type=int,
+        nargs="?",
+        const=8,
+        help=(
+            "persistently restrict choices to the top K heuristic placements "
+            "(passing the flag without K uses 8)"
+        ),
+    )
     parser.add_argument("--gradient-clip", type=float, default=10.0)
     parser.add_argument("--max-placements", type=int, default=1_000)
     parser.add_argument("--seed", type=int, default=0)
@@ -71,6 +81,7 @@ def main() -> None:
             epsilon_decay_steps=args.epsilon_decay_steps,
             reward_scale=args.reward_scale,
             terminal_penalty=args.terminal_penalty,
+            heuristic_top_k=args.heuristic_top_k,
             gradient_clip=args.gradient_clip,
             max_placements=args.max_placements,
             seed=args.seed,

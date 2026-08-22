@@ -46,6 +46,16 @@ def parse_args() -> argparse.Namespace:
         default="auto",
         help="DQN inference device: auto, cpu, mps, or cuda",
     )
+    parser.add_argument(
+        "--heuristic-top-k",
+        type=int,
+        nargs="?",
+        const=8,
+        help=(
+            "restrict DQN choices to the top K heuristic placements "
+            "(passing the flag without K uses 8)"
+        ),
+    )
     parser.add_argument("--seed", type=int)
     heuristic = parser.add_argument_group("heuristic parameters")
     for parameter in HEURISTIC_PARAMETERS:
@@ -53,8 +63,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def policy_params(args: argparse.Namespace) -> dict[str, float | str]:
-    params: dict[str, float | str] = {
+def policy_params(
+    args: argparse.Namespace,
+) -> dict[str, float | int | str | None]:
+    params: dict[str, float | int | str | None] = {
         parameter: value
         for parameter in HEURISTIC_PARAMETERS
         if (value := getattr(args, parameter, None)) is not None
@@ -63,6 +75,7 @@ def policy_params(args: argparse.Namespace) -> dict[str, float | str]:
         params["filepath"] = args.params_file
     if args.policy == "dqn":
         params["device"] = args.device
+        params["heuristic_top_k"] = args.heuristic_top_k
     return params
 
 
@@ -80,6 +93,10 @@ def run(args: argparse.Namespace, stdscr=None) -> None:
         raise SystemExit("--params-file requires a heuristic or DQN policy")
     if args.policy == "dqn" and args.params_file is None:
         raise SystemExit("--policy dqn requires --params-file")
+    if args.heuristic_top_k is not None and args.policy != "dqn":
+        raise SystemExit("--heuristic-top-k requires --policy dqn")
+    if args.heuristic_top_k is not None and args.heuristic_top_k < 1:
+        raise SystemExit("--heuristic-top-k must be at least one")
 
     player = Player(
         policy=Policy[args.policy.replace("-", "_").upper()],

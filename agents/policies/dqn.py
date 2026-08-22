@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from agents.placements import find_possible_states
+from agents.policies.heuristic import top_heuristic_placements
 from core.board import Board
 from core.pieces import PIECE_TO_ID
 
@@ -161,6 +162,7 @@ def dqn_policy(
     next_piece: str | None = None,
     level: int = 0,
     device: str = "auto",
+    heuristic_top_k: int | None = None,
 ) -> BoardState:
     """Choose the highest-scoring legal placement from a stored DQN model."""
     if filepath is None:
@@ -170,6 +172,7 @@ def dqn_policy(
 
     torch_module = require_torch()
     placements = find_possible_states(start_state, harddrop)
+    placements = top_heuristic_placements(placements, heuristic_top_k)
     boards = placement_boards(placements)
     model_device = device_for(device)
     model = _stored_model(str(Path(filepath).resolve()), str(model_device))

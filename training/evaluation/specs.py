@@ -49,6 +49,7 @@ class DQNPolicySpec:
 
     filepath: str
     device: str = "cpu"
+    heuristic_top_k: int | None = None
 
     def build_player(self) -> Player:
         return Player(
@@ -58,5 +59,6 @@ class DQNPolicySpec:
             policy_params={
                 "filepath": self.filepath,
                 "device": self.device,
+                "heuristic_top_k": self.heuristic_top_k,
             },
         )

@@ -49,7 +49,7 @@ class Player:
         stdscr: curses.window | None = None,
         filepath: str | None = None,
         tick_speed: float = TICK,
-        policy_params: dict[str, float | str] | None = None,
+        policy_params: dict[str, float | int | str | None] | None = None,
         instant_placement: bool = False,
         seed: int | None = None,
     ) -> None:

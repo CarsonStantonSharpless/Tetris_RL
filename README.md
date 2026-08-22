@@ -98,6 +98,18 @@ Training keeps the game's normal score reward and adds a `-1000` terminal
 penalty when a placement causes game over. Override it with
 `--terminal-penalty 0` to disable that training-only penalty.
 
+Optionally constrain exploration and DQN decisions to the eight placements
+ranked highest by the existing heuristic:
+
+```bash
+python3 -m training.reinforcement.run_double_dqn 10000 --heuristic-top-k
+```
+
+Pass a number such as `--heuristic-top-k 12` to choose a different limit.
+The constraint is persistent: it applies to training choices, bootstrap
+targets, and evaluation without changing or shaping the game's rewards.
+Omitting the option runs an unconstrained Double DQN.
+
 Each run writes `training.png` (loss, score, exploration, Q values, replay
 size, and evaluation score), the most-recent playable `model.pt`, and a
 protected `best_model.pt` whenever fixed-seed evaluation reaches a new high.
@@ -108,6 +120,9 @@ best saved model with:
 python3 run.py --policy dqn --params-file runs/double_dqn_.../best_model.pt \
   --no-display --instant-placement --max-ticks 1000
 ```
+
+For a constrained model, add `--heuristic-top-k` when playing it (or pass the
+explicit K used during training) to preserve the same action space.
 
 Resume training from the most recent full checkpoint:
 

@@ -97,6 +97,23 @@ def evaluate_features(grid: np.ndarray) -> np.ndarray:
         tetris_setup(grid)
     ])
 
+
+def top_heuristic_placements(
+    placements: list[BoardState],
+    top_k: int | None,
+) -> list[BoardState]:
+    """Return the highest-scoring placements under the existing heuristic."""
+    if top_k is not None and top_k < 1:
+        raise ValueError("heuristic top-k must be at least one")
+    if top_k is None or top_k >= len(placements):
+        return placements
+    return sorted(
+        placements,
+        key=lambda placement: evaluate(placement.locked),
+        reverse=True,
+    )[:top_k]
+
+
 def aggregate_height(grid: np.ndarray) -> float:
     heights = column_heights(grid)
     return max(0.0, 1 - (float(heights.sum()) / (20*10)))

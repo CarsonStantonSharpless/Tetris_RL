@@ -27,6 +27,7 @@ from agents.policies.dqn import (
     placement_boards,
     require_torch,
 )
+from agents.policies.heuristic import top_heuristic_placements
 from storage.dqn import (
     read_dqn_checkpoint,
     write_dqn_checkpoint,
@@ -112,6 +113,7 @@ class DQNConfig:
     epsilon_decay_steps: int = 50_000
     reward_scale: float = 1_200.0
     terminal_penalty: float = -1_000.0
+    heuristic_top_k: int | None = None
     gradient_clip: float = 10.0
 
 
@@ -332,6 +334,7 @@ def double_dqn(
     epsilon_decay_steps: int = 50_000,
     reward_scale: float = 1_200.0,
     terminal_penalty: float = -1_000.0,
+    heuristic_top_k: int | None = None,
     gradient_clip: float = 10.0,
     max_placements: int = 1_000,
     seed: int = 0,
@@ -372,6 +375,7 @@ def double_dqn(
         epsilon_decay_steps=epsilon_decay_steps,
         reward_scale=reward_scale,
         terminal_penalty=terminal_penalty,
+        heuristic_top_k=heuristic_top_k,
         gradient_clip=gradient_clip,
     )
     model_device = device_for(device)
@@ -379,7 +383,11 @@ def double_dqn(
     if resume_from is not None:
         checkpoint = read_dqn_checkpoint(resume_from, model_device)
         try:
-            config = DQNConfig(**checkpoint["config"])
+            config_data = dict(checkpoint["config"])
+            # Reward-shaped heuristic checkpoints predate top-k filtering.
+            config_data.pop("heuristic_feedback", None)
+            config_data.pop("heuristic_feedback_scale", None)
+            config = DQNConfig(**config_data)
         except (KeyError, TypeError) as error:
             raise ValueError("DQN checkpoint has an invalid training config") from error
     _validate_config(config)
@@ -416,6 +424,7 @@ def double_dqn(
                     seed + 1_000_000,
                     evaluation_games,
                     max_placements,
+                    agent.config.heuristic_top_k,
                 )
                 if agent.record_evaluation(latest_evaluation):
                     write_dqn_model_state(agent.best_model_state, best_model_path)
@@ -441,6 +450,7 @@ def double_dqn(
             seed + 1_000_000,
             evaluation_games,
             max_placements,
+            agent.config.heuristic_top_k,
         )
         if agent.record_evaluation(latest_evaluation):
             write_dqn_model_state(agent.best_model_state, best_model_path)
@@ -472,7 +482,10 @@ def _play_training_episode(
     q_values: list[float] = []
 
     while not player.engine.is_game_over and player.engine.ticks < max_placements:
-        placements, boards, current_piece, next_piece, level = _legal_afterstates(player)
+        placements, boards, current_piece, next_piece, level = _legal_afterstates(
+            player,
+            agent.config.heuristic_top_k,
+        )
         choice, q_value = agent.choose_action(
             boards,
             current_piece,
@@ -496,18 +509,20 @@ def _play_training_episode(
                 next_current_piece,
                 following_piece,
                 next_level,
-            ) = _legal_afterstates(player)
+            ) = _legal_afterstates(player, agent.config.heuristic_top_k)
+
+        training_reward = _training_reward(
+            result.reward,
+            result.done,
+            agent.config.terminal_penalty,
+        )
 
         agent.replay_buffer.append(Transition(
             board=boards[choice],
             current_piece=current_piece,
             next_piece=next_piece,
             level=level,
-            reward=_training_reward(
-                result.reward,
-                result.done,
-                agent.config.terminal_penalty,
-            ) / agent.config.reward_scale,
+            reward=training_reward / agent.config.reward_scale,
             next_boards=next_boards,
             next_current_piece=next_current_piece,
             following_piece=following_piece,
@@ -529,9 +544,11 @@ def _play_training_episode(
 
 def _legal_afterstates(
     player: Player,
+    heuristic_top_k: int | None = None,
 ) -> tuple[list[Any], np.ndarray, int, int, int]:
     """Return legal placements encoded for the afterstate-value DQN."""
     placements = player.possible_placements()
+    placements = top_heuristic_placements(placements, heuristic_top_k)
     boards = placement_boards(placements)
     return (
         placements,
@@ -632,11 +649,12 @@ def _evaluate_model(
     seed: int,
     games: int,
     max_placements: int,
+    heuristic_top_k: int | None,
 ) -> float:
     """Evaluate through the normal serial policy-spec pathway."""
     clear_dqn_model_cache()
     results = evaluate(
-        DQNPolicySpec(str(filepath)),
+        DQNPolicySpec(str(filepath), heuristic_top_k=heuristic_top_k),
         range(seed, seed + games),
         max_placements,
     )
@@ -688,3 +706,5 @@ def _validate_config(config: DQNConfig) -> None:
         raise ValueError("reward_scale and gradient_clip must be greater than zero")
     if config.terminal_penalty > 0:
         raise ValueError("terminal_penalty cannot be positive")
+    if config.heuristic_top_k is not None and config.heuristic_top_k < 1:
+        raise ValueError("heuristic_top_k must be at least one")
