@@ -10,7 +10,7 @@ A quick terminal based tetris implementation. This was a nice weekend project th
 - `numpy`
 - `tqdm`
 - `matplotlib`
-- `torch` (for Double DQN training and inference)
+- `torch` (for Double DQN and PPO training/inference)
 
 Install them with:
 
@@ -133,6 +133,56 @@ python3 -m training.reinforcement.run_double_dqn 5000 \
 
 For long headless runs, add `--plot-every 500` to avoid redrawing the plot
 after every episode while still saving regular progress snapshots.
+
+## PPO
+
+PPO uses the same instant-placement environment interface as Double DQN, but
+the thing it learns is different. For each environment state:
+
+1. The environment emits the current board and all legal final placements.
+2. The actor scores each legal placement afterstate and samples one action
+   from the resulting categorical policy, `P(a | s)`.
+3. The critic estimates `V(s)` from the current board before that action.
+4. The environment applies the placement and emits the real score reward, the
+   next state, and whether the game ended.
+5. GAE combines the critic values with those rewards. It emits advantages for
+   training the actor and return targets for training the critic.
+6. PPO compares `P_new(a | s) / P_old(a | s)` and clips overly large helpful
+   changes before updating the shared actor-critic model.
+
+The code follows those same boundaries: the model and playable policy live in
+`agents/policies/ppo.py`, the standalone GAE calculation lives in
+`training/reinforcement/ppo/gae.py`, and the commented rollout/update loop
+lives in `training/reinforcement/ppo/trainer.py`.
+
+Train headlessly with:
+
+```bash
+python3 -m training.reinforcement.run_ppo 10000 --no-display
+```
+
+Each episode is one fresh on-policy rollout. The run writes `model.pt`, a
+resumable `latest.pt`, periodic checkpoints, and `best_model.pt` selected by
+fixed-seed evaluation. Its nine-panel `training.png` separates environment
+score, actor loss, critic loss, entropy, PPO clipping, TD residuals, and the
+mean absolute GAE advantage.
+
+Play the best actor greedily through the regular player CLI:
+
+```bash
+python3 run.py --policy ppo --params-file runs/ppo_.../best_model.pt \
+  --no-display --instant-placement --max-ticks 1000
+```
+
+Resume a training run with its full checkpoint:
+
+```bash
+python3 -m training.reinforcement.run_ppo 5000 \
+  --resume-from runs/ppo_.../latest.pt --no-display
+```
+
+As with DQN, `--heuristic-top-k` optionally limits the legal action set during
+training, evaluation, and play. Use the same value in all three places.
 
 ## Controls
 

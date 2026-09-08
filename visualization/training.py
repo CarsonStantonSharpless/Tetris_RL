@@ -94,3 +94,83 @@ class DQNTrainingPlot:
         self.figure.savefig(self.filepath)
         if self.display:
             self.plt.pause(0.001)
+
+
+class PPOTrainingPlot:
+    """Display the environment, actor, critic, and GAE learning signals."""
+
+    _PLOTS = (
+        ("score", "Environment score", "Episode", "Score"),
+        ("loss", "Combined PPO loss", "Episode", "Loss"),
+        ("policy_loss", "Actor policy loss", "Episode", "Loss"),
+        ("value_loss", "Critic value loss", "Episode", "Loss"),
+        (
+            "gae_advantage",
+            "Mean absolute GAE advantage",
+            "Episode",
+            "|Advantage|",
+        ),
+        (
+            "td_residual",
+            "Mean absolute TD residual",
+            "Episode",
+            "|TD residual|",
+        ),
+        ("entropy", "Actor entropy", "Episode", "Entropy"),
+        ("clip_fraction", "PPO clip fraction", "Episode", "Fraction"),
+        (
+            "evaluation_score",
+            "Fixed-seed evaluation score",
+            "Episode",
+            "Mean score",
+        ),
+    )
+
+    def __init__(
+        self,
+        filepath: str | Path,
+        display: bool = True,
+        save_every: int = 1,
+    ) -> None:
+        import matplotlib.pyplot as plt
+
+        if save_every < 1:
+            raise ValueError("save_every must be at least one")
+        self.plt = plt
+        self.filepath = Path(filepath)
+        self.display = display
+        self.save_every = save_every
+        self.updates = 0
+        self.metrics = {name: [] for name, *_ in self._PLOTS}
+        self.figure, self.axes = plt.subplots(3, 3, figsize=(13, 10))
+        self.figure.subplots_adjust(hspace=0.5, wspace=0.35)
+        if display:
+            plt.ion()
+            plt.show(block=False)
+
+    def update(self, values: Mapping[str, float | int | None]) -> None:
+        """Append one episode's metrics and redraw at the chosen interval."""
+        for name in self.metrics:
+            value = values.get(name)
+            self.metrics[name].append(float("nan") if value is None else value)
+        self.updates += 1
+        if not self.display and self.updates % self.save_every:
+            return
+        self.save()
+
+    def save(self) -> None:
+        """Redraw and write every PPO panel immediately."""
+        for axes, (name, title, xlabel, ylabel) in zip(
+            self.axes.flat,
+            self._PLOTS,
+            strict=True,
+        ):
+            axes.clear()
+            # A marker keeps even a one-episode teaching run visible.
+            axes.plot(self.metrics[name], marker=".")
+            axes.set(title=title, xlabel=xlabel, ylabel=ylabel)
+
+        self.filepath.parent.mkdir(parents=True, exist_ok=True)
+        self.figure.savefig(self.filepath)
+        if self.display:
+            self.plt.pause(0.001)

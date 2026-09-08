@@ -41,3 +41,10 @@ captain_parameters = read_genetic_parameters("leaders.json")
 checkpoints. The latter also contain the target network, optimizer, replay
 buffer, random state, hyperparameters, and best-model record, so they can
 resume a Double DQN run exactly where the prior checkpoint stopped.
+
+## PPO Models
+
+`ppo.py` uses the same latest/best/full-checkpoint split for PPO. A full PPO
+checkpoint stores the shared actor-critic network, optimizer, random sampling
+state, hyperparameters, counters, and best-model record. Rollouts are not
+stored because PPO consumes and discards them before each checkpoint.

@@ -62,3 +62,24 @@ class DQNPolicySpec:
                 "heuristic_top_k": self.heuristic_top_k,
             },
         )
+
+
+@dataclass(frozen=True)
+class PPOPolicySpec:
+    """Serializable instructions for evaluating a saved PPO actor."""
+
+    filepath: str
+    device: str = "cpu"
+    heuristic_top_k: int | None = None
+
+    def build_player(self) -> Player:
+        return Player(
+            policy=Policy.PPO,
+            display=False,
+            instant_placement=True,
+            policy_params={
+                "filepath": self.filepath,
+                "device": self.device,
+                "heuristic_top_k": self.heuristic_top_k,
+            },
+        )

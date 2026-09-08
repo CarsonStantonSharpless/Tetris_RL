@@ -10,6 +10,7 @@ from agents.placers.dfs import dfs_placer
 from agents.policies.heuristic import genetic_heuristic_policy, heuristic_policy
 from agents.policies.random import random_policy
 from agents.policies.dqn import dqn_policy
+from agents.policies.ppo import ppo_policy
 from storage.games import write_board_states
 
 
@@ -18,6 +19,7 @@ class Policy(IntEnum):
     HEURISTIC = 2
     GENETIC_HEURISTIC = 3
     DQN = 4
+    PPO = 5
 
 
 POLICIES = {
@@ -25,6 +27,7 @@ POLICIES = {
     Policy.HEURISTIC: heuristic_policy,
     Policy.GENETIC_HEURISTIC: genetic_heuristic_policy,
     Policy.DQN: dqn_policy,
+    Policy.PPO: ppo_policy,
 }
 
 
@@ -57,6 +60,7 @@ class Player:
             Policy.HEURISTIC,
             Policy.GENETIC_HEURISTIC,
             Policy.DQN,
+            Policy.PPO,
         ):
             raise ValueError("policy_params require a parameterized policy")
 

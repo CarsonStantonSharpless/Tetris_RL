@@ -13,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Tetris player.")
     parser.add_argument(
         "--policy",
-        choices=["random", "heuristic", "genetic-heuristic", "dqn"],
+        choices=["random", "heuristic", "genetic-heuristic", "dqn", "ppo"],
         default="random",
     )
     parser.add_argument("--placer", choices=["bfs", "dfs"], default="bfs")
@@ -39,12 +39,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--filepath", help="save board states to this .trs file")
     parser.add_argument(
         "--params-file",
-        help="saved heuristic weights or a DQN model/checkpoint",
+        help="saved heuristic weights or a DQN/PPO model/checkpoint",
     )
     parser.add_argument(
         "--device",
         default="auto",
-        help="DQN inference device: auto, cpu, mps, or cuda",
+        help="neural-policy device: auto, cpu, mps, or cuda",
     )
     parser.add_argument(
         "--heuristic-top-k",
@@ -52,7 +52,7 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         const=8,
         help=(
-            "restrict DQN choices to the top K heuristic placements "
+            "restrict DQN/PPO choices to the top K heuristic placements "
             "(passing the flag without K uses 8)"
         ),
     )
@@ -73,7 +73,7 @@ def policy_params(
     }
     if args.params_file is not None:
         params["filepath"] = args.params_file
-    if args.policy == "dqn":
+    if args.policy in ("dqn", "ppo"):
         params["device"] = args.device
         params["heuristic_top_k"] = args.heuristic_top_k
     return params
@@ -89,12 +89,13 @@ def run(args: argparse.Namespace, stdscr=None) -> None:
         "heuristic",
         "genetic-heuristic",
         "dqn",
+        "ppo",
     ):
-        raise SystemExit("--params-file requires a heuristic or DQN policy")
-    if args.policy == "dqn" and args.params_file is None:
-        raise SystemExit("--policy dqn requires --params-file")
-    if args.heuristic_top_k is not None and args.policy != "dqn":
-        raise SystemExit("--heuristic-top-k requires --policy dqn")
+        raise SystemExit("--params-file requires a heuristic, DQN, or PPO policy")
+    if args.policy in ("dqn", "ppo") and args.params_file is None:
+        raise SystemExit(f"--policy {args.policy} requires --params-file")
+    if args.heuristic_top_k is not None and args.policy not in ("dqn", "ppo"):
+        raise SystemExit("--heuristic-top-k requires --policy dqn or ppo")
     if args.heuristic_top_k is not None and args.heuristic_top_k < 1:
         raise SystemExit("--heuristic-top-k must be at least one")
 

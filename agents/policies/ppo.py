@@ -1,10 +1,15 @@
-"""The neural afterstate scorer used by the Double DQN player policy.
+"""The actor-critic network used by the PPO placement policy.
 
-The model scores one legal placement at a time. Its board input is the grid
-after that placement has locked and cleared rows; the current piece, preview
-piece, and level retain the rest of the decision-state context. Scoring
-afterstates keeps the variable number of legal Tetris placements out of the
-network API.
+The Tetris environment has a different number of legal placements in every
+state.  Just like the DQN, this model avoids a fixed-size action output by
+scoring one legal *afterstate* at a time:
+
+* The actor turns all legal afterstate scores into ``P(a | s)``.
+* The critic assigns one value ``V(s)`` to the current pre-action state.
+
+The actor and critic share the small board encoder.  Their final heads are
+separate because an action preference and a state value answer different
+questions.
 """
 
 from __future__ import annotations
@@ -13,12 +18,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
 from agents.placements import find_possible_states
+from agents.policies.dqn import BOARD_SHAPE, device_for, piece_id, require_torch
 from agents.policies.heuristic import top_heuristic_placements
-from core.board import Board
-from core.pieces import PIECE_TO_ID
 
 if TYPE_CHECKING:
     from core.board import BoardState
@@ -26,44 +28,19 @@ if TYPE_CHECKING:
 try:
     import torch
     from torch import nn
-except ModuleNotFoundError:  # Keep non-DQN policies usable without PyTorch.
+except ModuleNotFoundError:  # Keep non-neural policies usable without PyTorch.
     torch = None  # type: ignore[assignment]
     nn = None  # type: ignore[assignment]
 
 
-BOARD_SHAPE = (22, 10)
-
-
-def require_torch() -> Any:
-    """Return PyTorch or explain the neural-policy dependency."""
-    if torch is None:
-        raise RuntimeError(
-            "DQN and PPO support require PyTorch. Install the project dependencies "
-            "with `python3 -m pip install -r requirements.txt`."
-        )
-    return torch
-
-
-def device_for(name: str = "auto") -> Any:
-    """Choose an available device, with ``auto`` preferring accelerators."""
-    torch_module = require_torch()
-    if name == "auto":
-        if torch_module.cuda.is_available():
-            return torch_module.device("cuda")
-        if getattr(torch_module.backends, "mps", None) and (
-            torch_module.backends.mps.is_available()
-        ):
-            return torch_module.device("mps")
-        return torch_module.device("cpu")
-    return torch_module.device(name)
-
-
 if nn is not None:
-    class DQN(nn.Module):
-        """A small convolutional network that scores a Tetris afterstate."""
+    class PPO(nn.Module):
+        """A small shared encoder with an actor head and a critic head."""
 
         def __init__(self) -> None:
             super().__init__()
+            # This encoder deliberately mirrors the DQN model so the two
+            # algorithms differ in their learning rule, not their capacity.
             self.convolutions = nn.Sequential(
                 nn.Conv2d(1, 16, kernel_size=3, padding=1),
                 nn.ReLU(),
@@ -77,20 +54,26 @@ if nn is not None:
             )
             # Piece ids are one through seven; zero remains an unused pad id.
             self.piece_embedding = nn.Embedding(8, 12, padding_idx=0)
-            self.head = nn.Sequential(
-                nn.Linear(128 + 12 + 12 + 1, 64),
+            feature_count = 128 + 12 + 12 + 1
+            self.actor = nn.Sequential(
+                nn.Linear(feature_count, 64),
+                nn.ReLU(),
+                nn.Linear(64, 1),
+            )
+            self.critic = nn.Sequential(
+                nn.Linear(feature_count, 64),
                 nn.ReLU(),
                 nn.Linear(64, 1),
             )
 
-        def forward(
+        def _encode(
             self,
             boards: Any,
             current_pieces: Any,
             next_pieces: Any,
             levels: Any,
         ) -> Any:
-            """Return one Q value for every legal-placement afterstate."""
+            """Encode either current-state boards or candidate afterstates."""
             if boards.ndim == 3:
                 boards = boards.unsqueeze(1)
             if boards.ndim != 4 or tuple(boards.shape[-2:]) != BOARD_SHAPE:
@@ -107,55 +90,82 @@ if nn is not None:
             board_features = self.board_features(self.convolutions(boards.float()))
             current_features = self.piece_embedding(current_pieces.long())
             next_features = self.piece_embedding(next_pieces.long())
-            # Level is bounded by the engine and only affects score multipliers.
             level_features = levels.float().unsqueeze(1) / 20.0
-            features = torch.cat(
+            return torch.cat(
                 (board_features, current_features, next_features, level_features),
                 dim=1,
             )
-            return self.head(features).squeeze(1)
+
+        def policy_logits(
+            self,
+            afterstate_boards: Any,
+            current_pieces: Any,
+            next_pieces: Any,
+            levels: Any,
+        ) -> Any:
+            """Return one unnormalized actor score for each legal action."""
+            features = self._encode(
+                afterstate_boards,
+                current_pieces,
+                next_pieces,
+                levels,
+            )
+            return self.actor(features).squeeze(1)
+
+        def state_values(
+            self,
+            state_boards: Any,
+            current_pieces: Any,
+            next_pieces: Any,
+            levels: Any,
+        ) -> Any:
+            """Return the critic's estimate ``V(s)`` for each current state."""
+            features = self._encode(
+                state_boards,
+                current_pieces,
+                next_pieces,
+                levels,
+            )
+            return self.critic(features).squeeze(1)
+
+        def forward(
+            self,
+            afterstate_boards: Any,
+            current_pieces: Any,
+            next_pieces: Any,
+            levels: Any,
+        ) -> Any:
+            """Alias the usual model call to the actor used while playing."""
+            return self.policy_logits(
+                afterstate_boards,
+                current_pieces,
+                next_pieces,
+                levels,
+            )
 else:
-    class DQN:  # pragma: no cover - exercised only without the optional dependency
+    class PPO:  # type: ignore[no-redef]  # pragma: no cover
         """Placeholder that explains the missing optional dependency."""
 
         def __init__(self) -> None:
             require_torch()
 
 
-def piece_id(piece: str) -> int:
-    """Convert a Tetris piece name to the model's embedding id."""
-    try:
-        return PIECE_TO_ID[piece]
-    except KeyError as error:
-        raise ValueError(f"unknown Tetris piece: {piece!r}") from error
-
-
-def placement_boards(placements: list[BoardState]) -> np.ndarray:
-    """Encode legal placement afterstates as immutable occupancy grids."""
-    if not placements:
-        raise ValueError("at least one legal placement is required")
-    return np.stack([
-        (Board.simulate_placement(placement).grid != 0).astype(np.float32)
-        for placement in placements
-    ])
-
-
 @lru_cache(maxsize=8)
 def _stored_model(filepath: str, device_name: str) -> Any:
     """Load each requested inference model once per process."""
-    from storage.dqn import load_dqn_model
+    from storage.ppo import load_ppo_model
 
-    model = load_dqn_model(filepath, device_for(device_name))
+    model = load_ppo_model(filepath, device_for(device_name))
     model.eval()
     return model
 
 
-def clear_dqn_model_cache() -> None:
-    """Forget cached inference models after a training run overwrites a file."""
+def clear_ppo_model_cache() -> None:
+    """Forget cached inference models after training overwrites a file."""
     _stored_model.cache_clear()
 
 
-def dqn_policy(
+def ppo_policy(
     start_state: BoardState,
     harddrop: bool = True,
     filepath: str | None = None,
@@ -164,11 +174,13 @@ def dqn_policy(
     device: str = "auto",
     heuristic_top_k: int | None = None,
 ) -> BoardState:
-    """Choose the highest-scoring legal placement from a stored DQN model."""
+    """Choose the most probable legal placement from a saved PPO actor."""
     if filepath is None:
-        raise ValueError("DQN policy requires a saved model filepath")
+        raise ValueError("PPO policy requires a saved model filepath")
     if next_piece is None:
-        raise ValueError("DQN policy requires the engine's next piece")
+        raise ValueError("PPO policy requires the engine's next piece")
+
+    from agents.policies.dqn import placement_boards
 
     torch_module = require_torch()
     placements = find_possible_states(start_state, harddrop)
@@ -194,10 +206,15 @@ def dqn_policy(
         level_tensor = torch_module.full(
             (len(placements),),
             level,
-            dtype=torch.float32,
+            dtype=torch_module.float32,
             device=model_device,
         )
         choice = int(torch_module.argmax(
-            model(board_tensor, current_piece_tensor, next_piece_tensor, level_tensor)
+            model(
+                board_tensor,
+                current_piece_tensor,
+                next_piece_tensor,
+                level_tensor,
+            )
         ).item())
     return placements[choice]
