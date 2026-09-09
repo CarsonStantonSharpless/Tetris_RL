@@ -10,8 +10,8 @@ There are three boundaries worth keeping visible while reading this file:
    critic values.  It emits advantages for the actor and returns for the
    critic.
 
-PPO is on-policy, so each episode is used for learning and then discarded.
-There is intentionally no replay buffer or target network here.
+PPO is on-policy, so a fresh batch of episodes is used for one learning phase
+and then discarded. There is intentionally no replay buffer or target network.
 """
 
 from __future__ import annotations
@@ -50,6 +50,7 @@ class PPOConfig:
     clip_range: float = 0.2
     update_epochs: int = 4
     minibatch_size: int = 64
+    episodes_per_update: int = 16
     value_loss_coefficient: float = 0.5
     entropy_coefficient: float = 0.01
     reward_scale: float = 1_200.0
@@ -169,45 +170,73 @@ class PPOAgent:
         with torch.no_grad():
             return float(self._state_value(observation).item())
 
-    def learn(self, rollout: EpisodeRollout) -> PPOMetrics:
-        """Turn one fresh rollout into GAE targets and clipped PPO updates."""
+    def learn(self, rollouts: list[EpisodeRollout]) -> PPOMetrics:
+        """Turn one fresh episode batch into GAE targets and PPO updates."""
         torch = require_torch()
 
-        # The environment supplied every reward and game-over flag below.
-        rewards = np.array([step.reward for step in rollout.steps], dtype=np.float32)
-        dones = np.array([step.done for step in rollout.steps], dtype=np.bool_)
-        # The old critic supplied these V(s) estimates before any PPO update.
-        old_values = np.array(
-            [step.old_value for step in rollout.steps],
-            dtype=np.float32,
-        )
-        # GAE emits: TD residuals, actor advantages, and critic return targets.
-        gae = generalized_advantage_estimate(
-            rewards,
-            old_values,
-            dones,
-            rollout.bootstrap_value,
-            self.config.discount,
-            self.config.gae_lambda,
-        )
-        # Normalization changes scale, not sign, and steadies actor updates.
-        advantages = _normalized_advantages(gae.advantages)
+        if not rollouts:
+            raise ValueError("PPO learning requires at least one episode")
+
+        steps: list[RolloutStep] = []
+        episode_advantages: list[np.ndarray] = []
+        episode_returns: list[np.ndarray] = []
+        episode_td_residuals: list[np.ndarray] = []
+
+        # GAE must restart at each episode boundary. Calculating each trajectory
+        # separately prevents rewards from one game leaking into another game.
+        for rollout in rollouts:
+            # The environment supplied this episode's rewards and done flags.
+            rewards = np.array(
+                [step.reward for step in rollout.steps],
+                dtype=np.float32,
+            )
+            dones = np.array(
+                [step.done for step in rollout.steps],
+                dtype=np.bool_,
+            )
+            # The unchanged old critic supplied V(s) while collecting the batch.
+            old_values = np.array(
+                [step.old_value for step in rollout.steps],
+                dtype=np.float32,
+            )
+            # GAE emits TD residuals, actor advantages, and critic return targets
+            # for this episode only.
+            gae = generalized_advantage_estimate(
+                rewards,
+                old_values,
+                dones,
+                rollout.bootstrap_value,
+                self.config.discount,
+                self.config.gae_lambda,
+            )
+            # Keep the transitions and GAE outputs in matching concatenated order.
+            steps.extend(rollout.steps)
+            episode_advantages.append(gae.advantages)
+            episode_returns.append(gae.returns)
+            episode_td_residuals.append(gae.td_residuals)
+
+        # The optimizer sees one larger batch from all freshly collected episodes.
+        raw_advantages = np.concatenate(episode_advantages)
+        critic_returns = np.concatenate(episode_returns)
+        td_residuals = np.concatenate(episode_td_residuals)
+        # Normalize across the complete batch so one unusual game dominates less.
+        advantages = _normalized_advantages(raw_advantages)
 
         losses: list[float] = []
         policy_losses: list[float] = []
         value_losses: list[float] = []
         entropies: list[float] = []
         clip_fractions: list[float] = []
-        indices = np.arange(len(rollout.steps))
+        indices = np.arange(len(steps))
 
-        # PPO reuses this one fresh on-policy rollout for a few learning passes.
+        # PPO reuses this fresh on-policy episode batch for a few learning passes.
         for _ in range(self.config.update_epochs):
             # Shuffling removes any special meaning from trajectory order.
             self.rng.shuffle(indices)
             # Each slice is small enough to form one optimizer update.
             for start in range(0, len(indices), self.config.minibatch_size):
                 batch_indices = indices[start:start + self.config.minibatch_size]
-                batch_steps = [rollout.steps[int(index)] for index in batch_indices]
+                batch_steps = [steps[int(index)] for index in batch_indices]
 
                 # Re-evaluate the recorded action with the changing new policy.
                 new_log_probabilities, new_values, entropy = (
@@ -225,7 +254,7 @@ class PPOAgent:
                     self.device
                 )
                 # These are GAE's V(s) + advantage targets for the critic.
-                batch_returns = torch.from_numpy(gae.returns[batch_indices]).to(
+                batch_returns = torch.from_numpy(critic_returns[batch_indices]).to(
                     self.device
                 )
 
@@ -294,8 +323,8 @@ class PPOAgent:
             value_loss=float(np.mean(value_losses)),
             entropy=float(np.mean(entropies)),
             clip_fraction=float(np.mean(clip_fractions)),
-            mean_absolute_advantage=float(np.mean(np.abs(gae.advantages))),
-            mean_absolute_td_residual=float(np.mean(np.abs(gae.td_residuals))),
+            mean_absolute_advantage=float(np.mean(np.abs(raw_advantages))),
+            mean_absolute_td_residual=float(np.mean(np.abs(td_residuals))),
         )
 
     def _policy_logits(self, observation: PlacementObservation) -> Any:
@@ -439,6 +468,7 @@ def ppo(
     clip_range: float = 0.2,
     update_epochs: int = 4,
     minibatch_size: int = 64,
+    episodes_per_update: int = 16,
     value_loss_coefficient: float = 0.5,
     entropy_coefficient: float = 0.01,
     reward_scale: float = 1_200.0,
@@ -455,7 +485,7 @@ def ppo(
     plot_every: int = 1,
     resume_from: str | Path | None = None,
 ) -> Path:
-    """Train PPO for ``num_games`` new complete on-policy rollouts."""
+    """Train PPO for ``num_games`` new episodes, batched before each update."""
     _validate_arguments(
         num_games,
         max_placements,
@@ -471,6 +501,7 @@ def ppo(
         clip_range=clip_range,
         update_epochs=update_epochs,
         minibatch_size=minibatch_size,
+        episodes_per_update=episodes_per_update,
         value_loss_coefficient=value_loss_coefficient,
         entropy_coefficient=entropy_coefficient,
         reward_scale=reward_scale,
@@ -483,7 +514,11 @@ def ppo(
     if resume_from is not None:
         checkpoint = read_ppo_checkpoint(resume_from, model_device)
         try:
-            config = PPOConfig(**checkpoint["config"])
+            config_data = dict(checkpoint["config"])
+            # Checkpoints created before episode batching use the new requested
+            # batch size (16 unless the CLI explicitly selected another value).
+            config_data.setdefault("episodes_per_update", episodes_per_update)
+            config = PPOConfig(**config_data)
         except (KeyError, TypeError) as error:
             raise ValueError("PPO checkpoint has an invalid training config") from error
     _validate_config(config)
@@ -503,20 +538,43 @@ def ppo(
     if agent.best_model_state is not None:
         write_ppo_model_state(agent.best_model_state, best_model_path)
 
-    # One trip through this loop means one fresh on-policy Tetris episode.
-    for _ in range(num_games):
-        # Give the environment a repeatable but different piece sequence.
-        episode_seed = seed + agent.episodes
-        # The environment emits states, legal actions, rewards, and done flags;
-        # the old actor/critic outputs are recorded beside them in the rollout.
-        rollout, score = _collect_episode(agent, episode_seed, max_placements)
-        # GAE turns that rollout into advantages/returns, then PPO learns from it.
-        metrics = agent.learn(rollout)
-        # The rollout is never replayed after this point: PPO is on-policy.
-        agent.episodes += 1
+    new_episodes = 0
+    # One trip through this loop collects one batch and performs one PPO update.
+    while new_episodes < num_games:
+        # A final partial batch ensures num_games remains an exact episode count.
+        current_batch_size = min(
+            agent.config.episodes_per_update,
+            num_games - new_episodes,
+        )
+        episodes_before_batch = agent.episodes
+        rollouts: list[EpisodeRollout] = []
+        scores: list[int] = []
 
-        # Periodically save something playable and measure it on fixed seeds.
-        if agent.episodes % checkpoint_every == 0:
+        # Crucially, no optimizer step occurs while these episodes are collected.
+        # Every stored probability therefore comes from the same old policy.
+        for _ in range(current_batch_size):
+            # Give the environment a repeatable but different piece sequence.
+            episode_seed = seed + agent.episodes
+            # The environment emits states, legal actions, rewards, and done flags;
+            # the unchanged old actor/critic outputs are recorded beside them.
+            rollout, score = _collect_episode(agent, episode_seed, max_placements)
+            # Add this independent trajectory to the fresh on-policy batch.
+            rollouts.append(rollout)
+            scores.append(score)
+            # Count completed episodes before assigning the next episode seed.
+            agent.episodes += 1
+            new_episodes += 1
+
+        # GAE is calculated inside each episode, then their outputs are combined.
+        metrics = agent.learn(rollouts)
+        # The entire batch is discarded after this point: PPO remains on-policy.
+
+        # Save after the batch that crosses each configured episode interval.
+        checkpoint_due = (
+            agent.episodes // checkpoint_every
+            > episodes_before_batch // checkpoint_every
+        )
+        if checkpoint_due:
             write_ppo_model(agent.model, model_path)
             if evaluation_games:
                 latest_evaluation = _evaluate_model(
@@ -538,7 +596,7 @@ def ppo(
         # Each point makes the actor, critic, GAE, and environment score visible.
         plot.update({
             "loss": metrics.loss,
-            "score": score,
+            "score": float(np.mean(scores)),
             "policy_loss": metrics.policy_loss,
             "value_loss": metrics.value_loss,
             "gae_advantage": metrics.mean_absolute_advantage,
@@ -640,9 +698,11 @@ def _observe_environment(
     return PlacementObservation(
         placements=placements,
         # The critic sees the board before the selected piece is placed.
-        state_board=(board_state.grid != 0).astype(np.float32),
+        # One-byte occupancy keeps a multi-episode batch reasonably small; the
+        # model converts it to floating point immediately before computation.
+        state_board=(board_state.grid != 0).astype(np.uint8),
         # The actor sees one board after each legal action locks and clears rows.
-        action_boards=placement_boards(placements),
+        action_boards=placement_boards(placements).astype(np.uint8),
         current_piece=piece_id(board_state.curr_piece.kind),
         next_piece=piece_id(player.state.next_piece),
         level=player.engine.level,
@@ -721,6 +781,8 @@ def _validate_config(config: PPOConfig) -> None:
         raise ValueError("clip_range must be greater than zero")
     if config.update_epochs < 1 or config.minibatch_size < 1:
         raise ValueError("update_epochs and minibatch_size must be at least one")
+    if config.episodes_per_update < 1:
+        raise ValueError("episodes_per_update must be at least one")
     if config.value_loss_coefficient < 0 or config.entropy_coefficient < 0:
         raise ValueError("loss coefficients cannot be negative")
     if config.reward_scale <= 0 or config.gradient_clip <= 0:

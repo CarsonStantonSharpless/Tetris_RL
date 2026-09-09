@@ -7,6 +7,7 @@ import numpy as np
 from agents.policies.dqn import require_torch
 from agents.policies.ppo import PPO
 from training.reinforcement.ppo.gae import generalized_advantage_estimate
+from training.reinforcement.ppo.trainer import PPOConfig
 
 
 class GAETests(unittest.TestCase):
@@ -39,6 +40,9 @@ class GAETests(unittest.TestCase):
 
 
 class PPOModelTests(unittest.TestCase):
+    def test_default_collects_sixteen_episodes_per_update(self) -> None:
+        self.assertEqual(PPOConfig().episodes_per_update, 16)
+
     def test_actor_scores_actions_and_critic_scores_states(self) -> None:
         torch = require_torch()
         model = PPO()

@@ -28,6 +28,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--update-epochs", type=int, default=4)
     parser.add_argument("--minibatch-size", type=int, default=64)
+    parser.add_argument(
+        "--episodes-per-update",
+        type=int,
+        default=16,
+        help="fresh episodes collected before each PPO update (default: 16)",
+    )
     parser.add_argument("--value-loss-coefficient", type=float, default=0.5)
     parser.add_argument("--entropy-coefficient", type=float, default=0.01)
     parser.add_argument("--reward-scale", type=float, default=1_200.0)
@@ -58,7 +64,7 @@ def parse_args() -> argparse.Namespace:
         "--plot-every",
         type=int,
         default=1,
-        help="save the training graph every N episodes when headless (default: 1)",
+        help="save the training graph every N PPO updates when headless (default: 1)",
     )
     parser.add_argument("--resume-from", help="a previous latest.pt checkpoint")
     parser.add_argument(
@@ -83,6 +89,7 @@ def main() -> None:
             clip_range=args.clip_range,
             update_epochs=args.update_epochs,
             minibatch_size=args.minibatch_size,
+            episodes_per_update=args.episodes_per_update,
             value_loss_coefficient=args.value_loss_coefficient,
             entropy_coefficient=args.entropy_coefficient,
             reward_scale=args.reward_scale,

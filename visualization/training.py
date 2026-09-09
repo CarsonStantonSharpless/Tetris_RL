@@ -97,31 +97,31 @@ class DQNTrainingPlot:
 
 
 class PPOTrainingPlot:
-    """Display the environment, actor, critic, and GAE learning signals."""
+    """Display one point for each batched PPO learning update."""
 
     _PLOTS = (
-        ("score", "Environment score", "Episode", "Score"),
-        ("loss", "Combined PPO loss", "Episode", "Loss"),
-        ("policy_loss", "Actor policy loss", "Episode", "Loss"),
-        ("value_loss", "Critic value loss", "Episode", "Loss"),
+        ("score", "Mean environment score", "PPO update", "Score"),
+        ("loss", "Combined PPO loss", "PPO update", "Loss"),
+        ("policy_loss", "Actor policy loss", "PPO update", "Loss"),
+        ("value_loss", "Critic value loss", "PPO update", "Loss"),
         (
             "gae_advantage",
             "Mean absolute GAE advantage",
-            "Episode",
+            "PPO update",
             "|Advantage|",
         ),
         (
             "td_residual",
             "Mean absolute TD residual",
-            "Episode",
+            "PPO update",
             "|TD residual|",
         ),
-        ("entropy", "Actor entropy", "Episode", "Entropy"),
-        ("clip_fraction", "PPO clip fraction", "Episode", "Fraction"),
+        ("entropy", "Actor entropy", "PPO update", "Entropy"),
+        ("clip_fraction", "PPO clip fraction", "PPO update", "Fraction"),
         (
             "evaluation_score",
             "Fixed-seed evaluation score",
-            "Episode",
+            "PPO update",
             "Mean score",
         ),
     )
@@ -149,7 +149,7 @@ class PPOTrainingPlot:
             plt.show(block=False)
 
     def update(self, values: Mapping[str, float | int | None]) -> None:
-        """Append one episode's metrics and redraw at the chosen interval."""
+        """Append one episode batch's metrics and redraw when configured."""
         for name in self.metrics:
             value = values.get(name)
             self.metrics[name].append(float("nan") if value is None else value)
