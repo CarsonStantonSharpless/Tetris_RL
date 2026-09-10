@@ -7,7 +7,11 @@ import numpy as np
 from agents.policies.dqn import require_torch
 from agents.policies.ppo import PPO
 from training.reinforcement.ppo.gae import generalized_advantage_estimate
-from training.reinforcement.ppo.trainer import PPOConfig
+from training.reinforcement.ppo.trainer import (
+    PPOConfig,
+    _bottom_up_potential,
+    _bottom_up_reward,
+)
 
 
 class GAETests(unittest.TestCase):
@@ -40,8 +44,28 @@ class GAETests(unittest.TestCase):
 
 
 class PPOModelTests(unittest.TestCase):
-    def test_default_collects_sixteen_episodes_per_update(self) -> None:
-        self.assertEqual(PPOConfig().episodes_per_update, 16)
+    def test_default_collects_a_fixed_number_of_transitions(self) -> None:
+        self.assertEqual(PPOConfig().rollout_steps, 1_024)
+        self.assertEqual(PPOConfig().bottom_up_bias, 0.0)
+
+    def test_bottom_up_hint_is_small_and_potential_based(self) -> None:
+        empty = np.zeros((22, 10), dtype=np.uint8)
+        low_piece = empty.copy()
+        low_piece[-1, :4] = 1
+        covered_hole = empty.copy()
+        covered_hole[-2, 0] = 1
+
+        self.assertEqual(_bottom_up_potential(empty), 22.0)
+        self.assertEqual(_bottom_up_potential(low_piece), 21.0)
+        self.assertEqual(_bottom_up_potential(covered_hole), 18.0)
+        self.assertEqual(
+            _bottom_up_reward(empty, low_piece, done=False, discount=1.0),
+            -1.0,
+        )
+        self.assertEqual(
+            _bottom_up_reward(low_piece, low_piece, done=True, discount=1.0),
+            -21.0,
+        )
 
     def test_actor_scores_actions_and_critic_scores_states(self) -> None:
         torch = require_torch()

@@ -10,8 +10,8 @@ There are three boundaries worth keeping visible while reading this file:
    critic values.  It emits advantages for the actor and returns for the
    critic.
 
-PPO is on-policy, so a fresh batch of episodes is used for one learning phase
-and then discarded. There is intentionally no replay buffer or target network.
+PPO is on-policy, so a fixed-size batch of fresh transitions is used for one
+learning phase and then discarded. There is no replay buffer or target network.
 """
 
 from __future__ import annotations
@@ -50,11 +50,12 @@ class PPOConfig:
     clip_range: float = 0.2
     update_epochs: int = 4
     minibatch_size: int = 64
-    episodes_per_update: int = 16
+    rollout_steps: int = 1_024
     value_loss_coefficient: float = 0.5
     entropy_coefficient: float = 0.01
     reward_scale: float = 1_200.0
     terminal_penalty: float = -1_000.0
+    bottom_up_bias: float = 0.0
     heuristic_top_k: int | None = None
     gradient_clip: float = 0.5
 
@@ -99,8 +100,12 @@ class RolloutStep:
 
 
 @dataclass(frozen=True)
-class EpisodeRollout:
-    """One trajectory plus the value after its final collected transition."""
+class RolloutSegment:
+    """Contiguous steps from one game plus the value immediately afterward.
+
+    A segment ends at game-over, the placement cap, or the fixed PPO rollout
+    boundary. A non-terminal segment uses its bootstrap value for GAE.
+    """
 
     steps: list[RolloutStep]
     bootstrap_value: float
@@ -170,55 +175,55 @@ class PPOAgent:
         with torch.no_grad():
             return float(self._state_value(observation).item())
 
-    def learn(self, rollouts: list[EpisodeRollout]) -> PPOMetrics:
-        """Turn one fresh episode batch into GAE targets and PPO updates."""
+    def learn(self, segments: list[RolloutSegment]) -> PPOMetrics:
+        """Turn one fixed transition rollout into GAE targets and updates."""
         torch = require_torch()
 
-        if not rollouts:
-            raise ValueError("PPO learning requires at least one episode")
+        if not segments:
+            raise ValueError("PPO learning requires at least one rollout segment")
 
         steps: list[RolloutStep] = []
-        episode_advantages: list[np.ndarray] = []
-        episode_returns: list[np.ndarray] = []
-        episode_td_residuals: list[np.ndarray] = []
+        segment_advantages: list[np.ndarray] = []
+        segment_returns: list[np.ndarray] = []
+        segment_td_residuals: list[np.ndarray] = []
 
-        # GAE must restart at each episode boundary. Calculating each trajectory
-        # separately prevents rewards from one game leaking into another game.
-        for rollout in rollouts:
-            # The environment supplied this episode's rewards and done flags.
+        # GAE must restart at every terminal or fixed-rollout boundary. A segment
+        # cut mid-game bootstraps V(s_next), so its unfinished future is not lost.
+        for segment in segments:
+            # The environment supplied this segment's rewards and done flags.
             rewards = np.array(
-                [step.reward for step in rollout.steps],
+                [step.reward for step in segment.steps],
                 dtype=np.float32,
             )
             dones = np.array(
-                [step.done for step in rollout.steps],
+                [step.done for step in segment.steps],
                 dtype=np.bool_,
             )
-            # The unchanged old critic supplied V(s) while collecting the batch.
+            # The unchanged old critic supplied V(s) while collecting the rollout.
             old_values = np.array(
-                [step.old_value for step in rollout.steps],
+                [step.old_value for step in segment.steps],
                 dtype=np.float32,
             )
             # GAE emits TD residuals, actor advantages, and critic return targets
-            # for this episode only.
+            # for this uninterrupted segment only.
             gae = generalized_advantage_estimate(
                 rewards,
                 old_values,
                 dones,
-                rollout.bootstrap_value,
+                segment.bootstrap_value,
                 self.config.discount,
                 self.config.gae_lambda,
             )
             # Keep the transitions and GAE outputs in matching concatenated order.
-            steps.extend(rollout.steps)
-            episode_advantages.append(gae.advantages)
-            episode_returns.append(gae.returns)
-            episode_td_residuals.append(gae.td_residuals)
+            steps.extend(segment.steps)
+            segment_advantages.append(gae.advantages)
+            segment_returns.append(gae.returns)
+            segment_td_residuals.append(gae.td_residuals)
 
-        # The optimizer sees one larger batch from all freshly collected episodes.
-        raw_advantages = np.concatenate(episode_advantages)
-        critic_returns = np.concatenate(episode_returns)
-        td_residuals = np.concatenate(episode_td_residuals)
+        # The optimizer sees one consistently sized batch of fresh transitions.
+        raw_advantages = np.concatenate(segment_advantages)
+        critic_returns = np.concatenate(segment_returns)
+        td_residuals = np.concatenate(segment_td_residuals)
         # Normalize across the complete batch so one unusual game dominates less.
         advantages = _normalized_advantages(raw_advantages)
 
@@ -229,7 +234,7 @@ class PPOAgent:
         clip_fractions: list[float] = []
         indices = np.arange(len(steps))
 
-        # PPO reuses this fresh on-policy episode batch for a few learning passes.
+        # PPO reuses this one fresh on-policy rollout for a few learning passes.
         for _ in range(self.config.update_epochs):
             # Shuffling removes any special meaning from trajectory order.
             self.rng.shuffle(indices)
@@ -468,11 +473,12 @@ def ppo(
     clip_range: float = 0.2,
     update_epochs: int = 4,
     minibatch_size: int = 64,
-    episodes_per_update: int = 16,
+    rollout_steps: int = 1_024,
     value_loss_coefficient: float = 0.5,
     entropy_coefficient: float = 0.01,
     reward_scale: float = 1_200.0,
     terminal_penalty: float = -1_000.0,
+    bottom_up_bias: float = 0.0,
     heuristic_top_k: int | None = None,
     gradient_clip: float = 0.5,
     max_placements: int = 1_000,
@@ -485,7 +491,7 @@ def ppo(
     plot_every: int = 1,
     resume_from: str | Path | None = None,
 ) -> Path:
-    """Train PPO for ``num_games`` new episodes, batched before each update."""
+    """Train PPO with fixed-size transition rollouts until ``num_games`` end."""
     _validate_arguments(
         num_games,
         max_placements,
@@ -501,11 +507,12 @@ def ppo(
         clip_range=clip_range,
         update_epochs=update_epochs,
         minibatch_size=minibatch_size,
-        episodes_per_update=episodes_per_update,
+        rollout_steps=rollout_steps,
         value_loss_coefficient=value_loss_coefficient,
         entropy_coefficient=entropy_coefficient,
         reward_scale=reward_scale,
         terminal_penalty=terminal_penalty,
+        bottom_up_bias=bottom_up_bias,
         heuristic_top_k=heuristic_top_k,
         gradient_clip=gradient_clip,
     )
@@ -515,9 +522,10 @@ def ppo(
         checkpoint = read_ppo_checkpoint(resume_from, model_device)
         try:
             config_data = dict(checkpoint["config"])
-            # Checkpoints created before episode batching use the new requested
-            # batch size (16 unless the CLI explicitly selected another value).
-            config_data.setdefault("episodes_per_update", episodes_per_update)
+            # Older checkpoints used complete episodes as their batch unit.
+            config_data.pop("episodes_per_update", None)
+            config_data.setdefault("rollout_steps", rollout_steps)
+            config_data.setdefault("bottom_up_bias", bottom_up_bias)
             config = PPOConfig(**config_data)
         except (KeyError, TypeError) as error:
             raise ValueError("PPO checkpoint has an invalid training config") from error
@@ -538,42 +546,36 @@ def ppo(
     if agent.best_model_state is not None:
         write_ppo_model_state(agent.best_model_state, best_model_path)
 
-    new_episodes = 0
-    # One trip through this loop collects one batch and performs one PPO update.
-    while new_episodes < num_games:
-        # A final partial batch ensures num_games remains an exact episode count.
-        current_batch_size = min(
-            agent.config.episodes_per_update,
-            num_games - new_episodes,
+    target_episodes = agent.episodes + num_games
+    # The same environment continues when a fixed rollout cuts through a game.
+    player = Player(
+        display=False,
+        instant_placement=True,
+        seed=seed + agent.episodes,
+    )
+
+    # One trip through this loop collects fresh transitions, then updates once.
+    while agent.episodes < target_episodes:
+        # End a rollout at checkpoint boundaries so resume always starts cleanly
+        # at the beginning of the following episode.
+        next_checkpoint_episode = (
+            (agent.episodes // checkpoint_every) + 1
+        ) * checkpoint_every
+        stop_after_episode = min(target_episodes, next_checkpoint_episode)
+
+        # The actor and critic remain unchanged throughout this collection call.
+        segments, scores = _collect_rollout(
+            agent,
+            player,
+            seed,
+            max_placements,
+            stop_after_episode,
         )
-        episodes_before_batch = agent.episodes
-        rollouts: list[EpisodeRollout] = []
-        scores: list[int] = []
+        # GAE handles each segment boundary before all transitions are combined.
+        metrics = agent.learn(segments)
+        # The complete fixed-step rollout is now discarded: PPO stays on-policy.
 
-        # Crucially, no optimizer step occurs while these episodes are collected.
-        # Every stored probability therefore comes from the same old policy.
-        for _ in range(current_batch_size):
-            # Give the environment a repeatable but different piece sequence.
-            episode_seed = seed + agent.episodes
-            # The environment emits states, legal actions, rewards, and done flags;
-            # the unchanged old actor/critic outputs are recorded beside them.
-            rollout, score = _collect_episode(agent, episode_seed, max_placements)
-            # Add this independent trajectory to the fresh on-policy batch.
-            rollouts.append(rollout)
-            scores.append(score)
-            # Count completed episodes before assigning the next episode seed.
-            agent.episodes += 1
-            new_episodes += 1
-
-        # GAE is calculated inside each episode, then their outputs are combined.
-        metrics = agent.learn(rollouts)
-        # The entire batch is discarded after this point: PPO remains on-policy.
-
-        # Save after the batch that crosses each configured episode interval.
-        checkpoint_due = (
-            agent.episodes // checkpoint_every
-            > episodes_before_batch // checkpoint_every
-        )
+        checkpoint_due = agent.episodes >= next_checkpoint_episode
         if checkpoint_due:
             write_ppo_model(agent.model, model_path)
             if evaluation_games:
@@ -596,7 +598,7 @@ def ppo(
         # Each point makes the actor, critic, GAE, and environment score visible.
         plot.update({
             "loss": metrics.loss,
-            "score": float(np.mean(scores)),
+            "score": float(np.mean(scores)) if scores else None,
             "policy_loss": metrics.policy_loss,
             "value_loss": metrics.value_loss,
             "gae_advantage": metrics.mean_absolute_advantage,
@@ -635,19 +637,29 @@ def ppo(
     return model_path
 
 
-def _collect_episode(
+def _collect_rollout(
     agent: PPOAgent,
+    player: Player,
     seed: int,
     max_placements: int,
-) -> tuple[EpisodeRollout, int]:
-    """Collect one episode while keeping environment/model roles explicit."""
-    # Player owns all Tetris rules and is the only object allowed to mutate them.
-    player = Player(display=False, instant_placement=True, seed=seed)
-    # PPO temporarily remembers the episode because it cannot use old experience.
-    steps: list[RolloutStep] = []
+    stop_after_episode: int,
+) -> tuple[list[RolloutSegment], list[int]]:
+    """Collect at most ``rollout_steps`` while preserving game boundaries."""
+    segments: list[RolloutSegment] = []
+    completed_scores: list[int] = []
+    current_steps: list[RolloutStep] = []
+    collected_steps = 0
 
-    # A placement is one environment step; stop at game-over or the safety cap.
-    while not player.engine.is_game_over and player.engine.ticks < max_placements:
+    # A PPO update now receives a consistent amount of experience regardless
+    # of whether the current policy survives for ten placements or one thousand.
+    while (
+        collected_steps < agent.config.rollout_steps
+        and agent.episodes < stop_after_episode
+    ):
+        # A prior segment may have ended exactly at the previous rollout boundary.
+        if player.engine.is_game_over or player.engine.ticks >= max_placements:
+            player.restart(seed=seed + agent.episodes)
+
         # The environment emits current state data and every legal action.
         observation = _observe_environment(player, agent.config.heuristic_top_k)
         # The model emits a sampled action, P_old(a | s), and V_old(s).
@@ -660,10 +672,19 @@ def _collect_episode(
             result.done,
             agent.config.terminal_penalty,
         )
+        # This optional potential difference gently favors low, hole-free boards.
+        if agent.config.bottom_up_bias:
+            next_board = (result.state.board_state.grid != 0).astype(np.uint8)
+            training_reward += agent.config.bottom_up_bias * _bottom_up_reward(
+                observation.state_board,
+                next_board,
+                result.done,
+                agent.config.discount,
+            )
         # Reward scaling keeps critic targets near the network's initial scale.
         scaled_reward = training_reward / agent.config.reward_scale
         # Store only what the PPO and GAE equations need from this fresh step.
-        steps.append(RolloutStep(
+        current_steps.append(RolloutStep(
             observation=observation,
             action=decision.action,
             old_log_probability=decision.log_probability,
@@ -673,18 +694,35 @@ def _collect_episode(
         ))
         # Count environment interactions independently from optimizer updates.
         agent.environment_steps += 1
+        collected_steps += 1
 
-    # A true terminal state is worth zero after the final transition.
-    bootstrap_value = 0.0
-    # A placement-cap truncation is not terminal, so ask the critic for V(s_next).
-    if not player.engine.is_game_over:
+        # Game-over and the per-game placement cap both close this trajectory.
+        episode_finished = result.done or player.engine.ticks >= max_placements
+        if episode_finished:
+            # Game-over has no future value; a capped game is merely truncated.
+            bootstrap_value = 0.0
+            if not result.done:
+                next_observation = _observe_environment(
+                    player,
+                    agent.config.heuristic_top_k,
+                )
+                bootstrap_value = agent.value_of(next_observation)
+            segments.append(RolloutSegment(current_steps, bootstrap_value))
+            current_steps = []
+            completed_scores.append(player.state.score)
+            agent.episodes += 1
+
+    # If the fixed transition budget cuts through a game, bootstrap its last
+    # state and continue that same environment after this PPO update.
+    if current_steps:
         final_observation = _observe_environment(
             player,
             agent.config.heuristic_top_k,
         )
         bootstrap_value = agent.value_of(final_observation)
-    # The displayed score is always the real environment score, without shaping.
-    return EpisodeRollout(steps, bootstrap_value), player.state.score
+        segments.append(RolloutSegment(current_steps, bootstrap_value))
+
+    return segments, completed_scores
 
 
 def _observe_environment(
@@ -698,7 +736,7 @@ def _observe_environment(
     return PlacementObservation(
         placements=placements,
         # The critic sees the board before the selected piece is placed.
-        # One-byte occupancy keeps a multi-episode batch reasonably small; the
+        # One-byte occupancy keeps a multi-game rollout reasonably small; the
         # model converts it to floating point immediately before computation.
         state_board=(board_state.grid != 0).astype(np.uint8),
         # The actor sees one board after each legal action locks and clears rows.
@@ -723,6 +761,40 @@ def _training_reward(
 ) -> float:
     """Add the configured training-only penalty when the game ends."""
     return score_reward + terminal_penalty if done else float(score_reward)
+
+
+def _bottom_up_reward(
+    current_board: np.ndarray,
+    next_board: np.ndarray,
+    done: bool,
+    discount: float,
+) -> float:
+    """Return a small potential difference favoring bottom-up construction.
+
+    This is deliberately measured in raw score-point units. At the CLI's
+    flag-only weight of one, an ordinary preference is a few points while even
+    a single cleared line is worth forty. Both actor and critic see this reward;
+    it only gives GAE a gentle early hint about which boards are promising.
+    """
+    current_potential = _bottom_up_potential(current_board)
+    next_potential = 0.0 if done else _bottom_up_potential(next_board)
+    return discount * next_potential - current_potential
+
+
+def _bottom_up_potential(board: np.ndarray) -> float:
+    """Score free headroom and subtract two points for every covered hole."""
+    filled = board != 0
+    occupied_columns = filled.any(axis=0)
+    first_filled_rows = np.argmax(filled, axis=0)
+    column_heights = np.where(
+        occupied_columns,
+        board.shape[0] - first_filled_rows,
+        0,
+    )
+    covered_cells = np.maximum.accumulate(filled, axis=0)
+    holes = int(np.count_nonzero(covered_cells & ~filled))
+    headroom = board.shape[0] - int(column_heights.max())
+    return max(0.0, float(headroom - 2 * holes))
 
 
 def _save_checkpoint(agent: PPOAgent, filepath: Path) -> None:
@@ -781,13 +853,15 @@ def _validate_config(config: PPOConfig) -> None:
         raise ValueError("clip_range must be greater than zero")
     if config.update_epochs < 1 or config.minibatch_size < 1:
         raise ValueError("update_epochs and minibatch_size must be at least one")
-    if config.episodes_per_update < 1:
-        raise ValueError("episodes_per_update must be at least one")
+    if config.rollout_steps < 1:
+        raise ValueError("rollout_steps must be at least one")
     if config.value_loss_coefficient < 0 or config.entropy_coefficient < 0:
         raise ValueError("loss coefficients cannot be negative")
     if config.reward_scale <= 0 or config.gradient_clip <= 0:
         raise ValueError("reward_scale and gradient_clip must be greater than zero")
     if config.terminal_penalty > 0:
         raise ValueError("terminal_penalty cannot be positive")
+    if config.bottom_up_bias < 0:
+        raise ValueError("bottom_up_bias cannot be negative")
     if config.heuristic_top_k is not None and config.heuristic_top_k < 1:
         raise ValueError("heuristic_top_k must be at least one")

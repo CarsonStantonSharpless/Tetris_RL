@@ -145,8 +145,8 @@ the thing it learns is different. For each environment state:
 3. The critic estimates `V(s)` from the current board before that action.
 4. The environment applies the placement and emits the real score reward, the
    next state, and whether the game ended.
-5. GAE combines the critic values with those rewards separately inside each
-   episode. It emits advantages for the actor and return targets for the
+5. GAE combines the critic values with those rewards without crossing terminal
+   boundaries. It emits advantages for the actor and return targets for the
    critic.
 6. PPO compares `P_new(a | s) / P_old(a | s)` and clips overly large helpful
    changes before updating the shared actor-critic model.
@@ -162,15 +162,29 @@ Train headlessly with:
 python3 -m training.reinforcement.run_ppo 10000 --no-display
 ```
 
-By default, the actor remains unchanged while 16 fresh episodes are collected.
-GAE is calculated within each episode boundary, then all transitions are
-combined, normalized, shuffled, and used for one PPO learning phase. Change
-the batch with `--episodes-per-update N`; a final smaller batch is used when
-the requested number of games is not divisible by N.
+By default, the actor remains unchanged while 1,024 fresh placement transitions
+are collected. The rollout can contain several games or cut through one long
+game. GAE stops at each terminal boundary and bootstraps the critic when the
+fixed rollout boundary cuts through a game. Change the fixed compute budget
+with `--rollout-steps N`.
+
+An optional potential reward can provide a very small bottom-up hint during
+early learning:
+
+```bash
+python3 -m training.reinforcement.run_ppo 10000 --bottom-up-bias --no-display
+```
+
+The hint values free headroom and penalizes covered holes. It is added as the
+change in that board potential, not as a replacement for the environment
+reward. Passing the flag alone uses a weight of one raw score point, so an
+ordinary preference is only a few points beside a 40-point line clear. Pass an
+explicit value such as `--bottom-up-bias 0.5` for an even lighter hint. It is
+off by default.
 
 The run writes `model.pt`, a resumable `latest.pt`, periodic checkpoints, and
 `best_model.pt` selected by fixed-seed evaluation. Each point in its nine-panel
-`training.png` represents one batch update and separates mean environment
+`training.png` represents one fixed-rollout update and separates mean environment
 score, actor loss, critic loss, entropy, PPO clipping, TD residuals, and the
 mean absolute GAE advantage.
 

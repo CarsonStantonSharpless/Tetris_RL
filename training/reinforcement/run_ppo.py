@@ -29,10 +29,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--update-epochs", type=int, default=4)
     parser.add_argument("--minibatch-size", type=int, default=64)
     parser.add_argument(
-        "--episodes-per-update",
+        "--rollout-steps",
         type=int,
-        default=16,
-        help="fresh episodes collected before each PPO update (default: 16)",
+        default=1_024,
+        help="fresh placement transitions per PPO update (default: 1024)",
     )
     parser.add_argument("--value-loss-coefficient", type=float, default=0.5)
     parser.add_argument("--entropy-coefficient", type=float, default=0.01)
@@ -42,6 +42,17 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=-1_000.0,
         help="raw training reward added on game-over (default: -1000)",
+    )
+    parser.add_argument(
+        "--bottom-up-bias",
+        type=float,
+        nargs="?",
+        const=1.0,
+        default=0.0,
+        help=(
+            "gently favor low, hole-free boards; the flag alone uses a "
+            "1-point potential weight (default: off)"
+        ),
     )
     parser.add_argument(
         "--heuristic-top-k",
@@ -89,11 +100,12 @@ def main() -> None:
             clip_range=args.clip_range,
             update_epochs=args.update_epochs,
             minibatch_size=args.minibatch_size,
-            episodes_per_update=args.episodes_per_update,
+            rollout_steps=args.rollout_steps,
             value_loss_coefficient=args.value_loss_coefficient,
             entropy_coefficient=args.entropy_coefficient,
             reward_scale=args.reward_scale,
             terminal_penalty=args.terminal_penalty,
+            bottom_up_bias=args.bottom_up_bias,
             heuristic_top_k=args.heuristic_top_k,
             gradient_clip=args.gradient_clip,
             max_placements=args.max_placements,

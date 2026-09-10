@@ -97,10 +97,15 @@ class DQNTrainingPlot:
 
 
 class PPOTrainingPlot:
-    """Display one point for each batched PPO learning update."""
+    """Display one point for each fixed-transition PPO update."""
 
     _PLOTS = (
-        ("score", "Mean environment score", "PPO update", "Score"),
+        (
+            "score",
+            "Mean completed-episode score",
+            "PPO update",
+            "Score",
+        ),
         ("loss", "Combined PPO loss", "PPO update", "Loss"),
         ("policy_loss", "Actor policy loss", "PPO update", "Loss"),
         ("value_loss", "Critic value loss", "PPO update", "Loss"),
@@ -149,7 +154,7 @@ class PPOTrainingPlot:
             plt.show(block=False)
 
     def update(self, values: Mapping[str, float | int | None]) -> None:
-        """Append one episode batch's metrics and redraw when configured."""
+        """Append one fixed-rollout update and redraw when configured."""
         for name in self.metrics:
             value = values.get(name)
             self.metrics[name].append(float("nan") if value is None else value)
