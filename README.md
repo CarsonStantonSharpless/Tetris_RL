@@ -1,261 +1,225 @@
-# TUI Tetris
+# Tetris RL
 
-A quick terminal based tetris implementation. This was a nice weekend project that I developed to be rolled into a future Tetris reinforcement learning project.
+A from-scratch Tetris engine for comparing different ways to make decisions:
+random play, hand-built and genetically tuned heuristics, linear temporal-
+difference learning, Double DQN, and PPO. Every method sees the same board and
+chooses from the same set of legal final placements.
 
-![Demo of the application](assets/TetrisDemo.gif)
+![A trained PPO agent playing Tetris in the terminal](assets/ppo-gameplay.gif)
 
-## Requirements
+[Watch the 15-second gameplay clip as an MP4](assets/ppo-gameplay.mp4)
 
-- Python 3.10 or newer
-- `numpy`
-- `tqdm`
-- `matplotlib`
-- `torch` (for Double DQN and PPO training/inference)
+## Where the project stands
 
-Install them with:
+> **Active portfolio preview — about 95% of the intended implementation is in
+> place.**
+
+The engine, terminal UI, placement search, training loops, checkpointing,
+fixed-seed evaluation, and playable neural policies all work. The current PPO
+run is promising, but this is not a finished research result. The remaining
+work is mostly compute-heavy: train multiple seeds, evaluate every method over
+the same larger seed set, report variance instead of isolated best runs, and
+tune PPO more deliberately.
+
+In other words, the system is ready to show and experiment with; the final
+comparison is not ready to claim yet.
+
+![Nine-panel dashboard from the current PPO training run](assets/ppo-training.png)
+
+*One in-progress PPO run. The fixed-seed evaluation points and completed-game
+scores show the policy learning useful play, but this figure is not a
+cross-method benchmark.*
+
+
+| Method | What it does | Current status |
+| --- | --- | --- |
+| Random | Chooses a legal placement uniformly | Baseline ready |
+| Heuristic | Scores five board features by hand | Playable |
+| Genetic heuristic | Evolves the heuristic weights in tournaments | Training and playback ready |
+| Linear TD | Learns weights over the same board features | Training ready |
+| Double DQN | Learns afterstate values with replay and a target network | Training, resume, evaluation, and playback ready |
+| PPO | Learns a placement policy and state-value critic with GAE | End-to-end pipeline ready; more tuning planned |
+
+The important engineering boundary is that policies do not own the game.
+`core/` owns the rules, `agents/placements.py` generates candidate afterstates,
+and each policy only decides which candidate to use. That keeps the experiment
+surface understandable and makes saved DQN and PPO models usable by the same
+player CLI.
+
+## Quick start
+
+Requires Python 3.10 or newer.
 
 ```bash
+git clone https://github.com/CarsonStantonSharpless/Tetris_RL.git
+cd Tetris_RL
+python3 -m venv .venv
+source .venv/bin/activate
 python3 -m pip install -r requirements.txt
 ```
 
-## Run
-
-From the project directory:
+Start with the hand-built heuristic:
 
 ```bash
-python3 run.py
+python3 run.py --policy heuristic
 ```
 
-This runs the random policy with the BFS placer. Use `python3 run.py --help` to
-control the player, display, timing, random seed, run length, and game-state
-output.
-
-For example, run headless for 1,000 ticks and save the game:
+Or run a fast headless episode:
 
 ```bash
-python3 run.py --no-display --max-ticks 1000 --filepath game.trs
+python3 run.py --policy heuristic --no-display \
+  --instant-placement --max-ticks 1000 --seed 0
 ```
 
-For training or evaluation, apply each policy-selected placement in one tick:
+`python3 run.py --help` lists the policy, placement, display, seed, and model
+options. With no arguments the player uses the random policy and BFS placer.
+
+## Training the methods
+
+Generated models, checkpoints, metrics, and plots are written under `runs/`.
+That directory is intentionally ignored by Git because a serious training run
+can produce gigabytes of resumable checkpoints.
+
+### Genetic heuristic
 
 ```bash
-python3 run.py --no-display --instant-placement --max-ticks 1000
+python3 -m training.genetic.run_tournament 10 100 \
+  --filepath leaders.json --seed 0
 ```
 
-Instant placement bypasses movement planning and soft-drop points. Each tick
-locks one piece, clears rows, updates the score, and spawns the next piece.
-
-Heuristic weights are optional and can be overridden individually:
-
-```bash
-python3 run.py --policy heuristic --alpha .3 --beta .4 --gamma .1 --delta .2
-```
-
-Run a genetic tournament and save its captain and lieutenant:
-
-```bash
-python3 -m training.genetic.run_tournament 10 100 --filepath leaders.json
-```
-
-Progress bars and leader fitness are shown by default; pass `--no-visualize` to
-disable them. Episode evaluation uses one process per CPU by default; pass
-`--workers 1` for serial evaluation or `--workers N` to set a limit. The saved
-captain can then drive the genetic heuristic policy. Episodes are capped at
-200 piece placements during the GA and the finalists are re-evaluated at 1,000.
-Change the finalist horizon with `--max-ticks N`; GA rounds use one-fifth of it.
+The tournament evaluates episodes in parallel by default, then writes its
+captain and lieutenant weights to JSON. Play the winner with:
 
 ```bash
 python3 run.py --policy genetic-heuristic --params-file leaders.json
 ```
 
-Without `--params-file`, the genetic heuristic uses the regular heuristic's
-default weights. Loading saved parameters never runs a tournament.
-
-Train linear TD weights in parallel:
+### Linear TD
 
 ```bash
-python3 -m training.reinforcement.run_linear_td 1000 --batch-size 8 --workers 8
+python3 -m training.reinforcement.run_linear_td 1000 \
+  --batch-size 8 --workers 8 --no-display
 ```
 
-Pass `--no-display` to disable the live loss plot. Results are written under
-`runs/`, including the loss plot, checkpoints, and winning weights.
+This is the smallest learned baseline: it updates weights over the same five
+features used by the heuristic policy.
 
-The display will try to resize compatible terminals to fit the interface. If
-your terminal does not support that, enlarge it manually before starting.
-
-## Double DQN
-
-The Double DQN learns from the same instant-placement `Player` interface used
-by the heuristic trainer. Its compact convolutional `DQN` scores every legal
-placement's afterstate, current piece, preview piece, and level. Train
-headlessly with:
+### Double DQN
 
 ```bash
 python3 -m training.reinforcement.run_double_dqn 10000 --no-display
 ```
 
-Training keeps the game's normal score reward and adds a `-1000` terminal
-penalty when a placement causes game over. Override it with
-`--terminal-penalty 0` to disable that training-only penalty.
-
-Optionally constrain exploration and DQN decisions to the eight placements
-ranked highest by the existing heuristic:
+Double DQN scores the legal placement afterstates with a compact convolutional
+network. It uses replay, a separate target network, fixed-seed evaluation, and
+resumable checkpoints. An optional heuristic gate can limit every training,
+bootstrap, evaluation, and playback decision to the top K hand-ranked moves:
 
 ```bash
-python3 -m training.reinforcement.run_double_dqn 10000 --heuristic-top-k
+python3 -m training.reinforcement.run_double_dqn 10000 \
+  --heuristic-top-k 8 --no-display
 ```
 
-Pass a number such as `--heuristic-top-k 12` to choose a different limit.
-The constraint is persistent: it applies to training choices, bootstrap
-targets, and evaluation without changing or shaping the game's rewards.
-Omitting the option runs an unconstrained Double DQN.
-
-Each run writes `training.png` (loss, score, exploration, Q values, replay
-size, and evaluation score), the most-recent playable `model.pt`, and a
-protected `best_model.pt` whenever fixed-seed evaluation reaches a new high.
-`latest.pt` and numbered checkpoints are resumable training state. Play the
-best saved model with:
-
-```bash
-python3 run.py --policy dqn --params-file runs/double_dqn_.../best_model.pt \
-  --no-display --instant-placement --max-ticks 1000
-```
-
-For a constrained model, add `--heuristic-top-k` when playing it (or pass the
-explicit K used during training) to preserve the same action space.
-
-Resume training from the most recent full checkpoint:
-
-```bash
-python3 -m training.reinforcement.run_double_dqn 5000 \
-  --resume-from runs/double_dqn_.../latest.pt --no-display
-```
-
-For long headless runs, add `--plot-every 500` to avoid redrawing the plot
-after every episode while still saving regular progress snapshots.
-
-## PPO
-
-PPO uses the same instant-placement environment interface as Double DQN, but
-the thing it learns is different. For each environment state:
-
-1. The environment emits the current board and all legal final placements.
-2. The actor scores each legal placement afterstate and samples one action
-   from the resulting categorical policy, `P(a | s)`.
-3. The critic estimates `V(s)` from the current board before that action.
-4. The environment applies the placement and emits the real score reward, the
-   next state, and whether the game ended.
-5. GAE combines the critic values with those rewards without crossing terminal
-   boundaries. It emits advantages for the actor and return targets for the
-   critic.
-6. PPO compares `P_new(a | s) / P_old(a | s)` and clips overly large helpful
-   changes before updating the shared actor-critic model.
-
-The code follows those same boundaries: the model and playable policy live in
-`agents/policies/ppo.py`, the standalone GAE calculation lives in
-`training/reinforcement/ppo/gae.py`, and the commented rollout/update loop
-lives in `training/reinforcement/ppo/trainer.py`.
-
-Train headlessly with:
+### PPO
 
 ```bash
 python3 -m training.reinforcement.run_ppo 10000 --no-display
 ```
 
-By default, the actor remains unchanged while 1,024 fresh placement transitions
-are collected. The rollout can contain several games or cut through one long
-game. GAE stops at each terminal boundary and bootstraps the critic when the
-fixed rollout boundary cuts through a game. Change the fixed compute budget
-with `--rollout-steps N`.
+PPO uses a shared actor-critic network. The actor produces a categorical policy
+over the legal placements, while the critic estimates the value of the current
+board. By default the trainer collects 1,024 fresh placement transitions,
+computes generalized advantage estimates without crossing game boundaries,
+and then performs clipped policy updates.
 
-An optional potential reward can provide a very small bottom-up hint during
-early learning:
+PPO learns from the base line-clear values (40, 100, 300, or 1,200 points)
+rather than the engine's level-multiplied display score. This gives the critic a
+consistent target scale across long games; plots and evaluations still report
+the official game score.
 
-```bash
-python3 -m training.reinforcement.run_ppo 10000 --bottom-up-bias --no-display
-```
-
-The hint values free headroom and penalizes covered holes. It is added as the
-change in that board potential, not as a replacement for the environment
-reward. Passing the flag alone uses a weight of one raw score point, so an
-ordinary preference is only a few points beside a 40-point line clear. Pass an
-explicit value such as `--bottom-up-bias 0.5` for an even lighter hint. It is
-off by default.
-
-The run writes `model.pt`, a resumable `latest.pt`, periodic checkpoints, and
-`best_model.pt` selected by fixed-seed evaluation. Each point in its nine-panel
-`training.png` represents one fixed-rollout update and separates mean environment
-score, actor loss, critic loss, entropy, PPO clipping, TD residuals, and the
-mean absolute GAE advantage.
-
-Play the best actor greedily through the regular player CLI:
+There is also an optional, deliberately small potential-based hint that favors
+low boards with open headroom:
 
 ```bash
-python3 run.py --policy ppo --params-file runs/ppo_.../best_model.pt \
-  --no-display --instant-placement --max-ticks 1000
+python3 -m training.reinforcement.run_ppo 10000 \
+  --bottom-up-bias 0.5 --no-display
 ```
 
-Resume a training run with its full checkpoint:
+It is off by default. I plan to revisit PPO's rollout size, entropy behavior,
+reward scaling, and the heuristic gate once I have enough compute for a proper
+multi-seed sweep.
+
+## Checkpoints and playback
+
+DQN and PPO runs write three kinds of artifacts:
+
+- `model.pt`: the most recent lightweight, playable model
+- `best_model.pt`: the best model seen by fixed-seed evaluation
+- `latest.pt` and `checkpoints/`: full state for resuming training
+
+Play a saved PPO actor greedily through the terminal UI:
+
+```bash
+python3 run.py --policy ppo \
+  --params-file runs/ppo_.../best_model.pt
+```
+
+For a fast headless evaluation-style run:
+
+```bash
+python3 run.py --policy ppo \
+  --params-file runs/ppo_.../best_model.pt \
+  --no-display --instant-placement --max-ticks 1000 --seed 0
+```
+
+Resume training from a full checkpoint:
 
 ```bash
 python3 -m training.reinforcement.run_ppo 5000 \
   --resume-from runs/ppo_.../latest.pt --no-display
 ```
 
-As with DQN, `--heuristic-top-k` optionally limits the legal action set during
-training, evaluation, and play. Use the same value in all three places.
+The same pattern works for Double DQN. If a model was trained with
+`--heuristic-top-k`, use the same value for playback so the action space stays
+consistent.
 
 ## Controls
 
-Movement keys are enabled with `--interactive`; pause, restart, and quit remain
-available in the default RL-controlled display.
+Add `--interactive` to allow movement keys alongside an automated policy.
+Pause, restart, and quit remain available without it.
 
 | Key | Action |
 | --- | --- |
-| `A` | Move left |
-| `D` | Move right |
+| `A` / `D` | Move left / right |
 | `S` | Soft drop |
-| `J` | Rotate left |
-| `K` | Rotate right |
+| `J` / `K` | Rotate left / right |
 | `P` | Pause or resume |
 | `R` | Restart |
 | `Q` | Quit |
 
-## Project Files
+## Project map
 
 ```text
-run.py                 configures and starts the player
-core/                  Tetris rules and engine
-agents/                policies, placements, and player control
-training/genetic/      genetic optimizer code
-training/reinforcement/ reinforcement learning code
-models/                parameterized heuristic and neural models
-storage/               game, checkpoint, and metric persistence
-visualization/         board, game, and learning visualizations
-tui/                   live terminal renderer
-tests/                 automated tests
-runs/                  generated experiment output
+run.py                  player command-line entry point
+core/                   board, pieces, scoring, and engine rules
+agents/                 policies, placement search, and player control
+training/evaluation/    seeded serial and parallel episode evaluation
+training/genetic/       genetic tournament and population code
+training/reinforcement/ linear TD, Double DQN, and PPO trainers
+storage/                game, parameter, model, and checkpoint formats
+visualization/          board and training plots
+tui/                    curses terminal renderer
+tests/                  focused PPO and GAE tests
+assets/                 portfolio-ready gameplay and training visuals
 ```
 
-## Headless / RL use
+## Roadmap before calling it finished
 
-Create the engine with rendering disabled, then call `step()` with zero or more
-control commands. Each call returns an `EngineState` dataclass containing a
-snapshot of the board, the next piece, and the score.
+- Run every method against the same held-out seeds and placement budget.
+- Repeat the learned methods across multiple training seeds and report spread.
+- Tune PPO from evidence rather than one-off runs.
+- Publish a compact benchmark table and selected lightweight checkpoints.
+- Expand automated coverage beyond the current PPO/GAE tests.
 
-```python
-from core.engine import Engine
-
-engine = Engine(render=False, tick_speed=1 / 60)
-state = engine.state
-state = engine.step("a")
-
-locked_grid = state.board_state.grid
-active_piece = state.board_state.curr_piece
-next_piece = state.next_piece
-score = state.score
-```
-
-`tick_speed` is measured in seconds per tick. `step()` never sleeps, letting a
-training environment run as fast as it needs to; `tick_speed` controls the
-interactive renderer's frame pacing and the engine's reported game time.
+The screenshots in this README are a progress report from one PPO run, not a
+claim that PPO has already won the comparison.

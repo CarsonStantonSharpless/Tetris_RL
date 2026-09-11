@@ -1,8 +1,22 @@
+# Python bytecode and local environments
 __pycache__/
 *.py[cod]
+.venv/
+venv/
+
+# Tooling caches and coverage output
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS and editor files
 .DS_Store
+.idea/
+.vscode/
+
+# Generated experiments and local models
 runs/
-*.trs
-*.json
 models/
-.mypy*
+*.trs
+leaders.json

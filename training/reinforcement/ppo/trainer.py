@@ -1,12 +1,14 @@
 """A deliberately direct PPO training loop for the Tetris placement player.
 
-There are three boundaries worth keeping visible while reading this file:
+There are four boundaries worth keeping visible while reading this file:
 
 1. ``Player`` is the environment.  It emits a state, legal placements, a
-   score reward, the resulting next state, and a game-over flag.
-2. ``PPO`` is the model.  Its actor emits action probabilities and its critic
+   cleared-line count, its official score, the next state, and game-over.
+2. The training loop turns the cleared-line count into a level-independent
+   base score, then optionally adds explicitly configured training-only hints.
+3. ``PPO`` is the model.  Its actor emits action probabilities and its critic
    emits ``V(s)``.  It never changes the board or invents rewards.
-3. ``generalized_advantage_estimate`` combines environment rewards with
+4. ``generalized_advantage_estimate`` combines training rewards with
    critic values.  It emits advantages for the actor and returns for the
    critic.
 
@@ -28,6 +30,7 @@ from agents.player import Player
 from agents.policies.dqn import device_for, piece_id, placement_boards, require_torch
 from agents.policies.heuristic import top_heuristic_placements
 from agents.policies.ppo import PPO, clear_ppo_model_cache
+from core.engine import LINE_SCORES
 from storage.ppo import (
     read_ppo_checkpoint,
     write_ppo_checkpoint,
@@ -664,11 +667,14 @@ def _collect_rollout(
         observation = _observe_environment(player, agent.config.heuristic_top_k)
         # The model emits a sampled action, P_old(a | s), and V_old(s).
         decision = agent.choose_action(observation)
-        # The environment applies that action and emits reward, next state, done.
+        # The environment applies that action and emits lines, next state, done.
         result = player.place(observation.placements[decision.action])
+        # PPO learns from the base line-clear score. The environment's displayed
+        # score still multiplies by level, but the critic's target scale does not.
+        line_clear_reward = _line_clear_reward(result.afterstate.lines_cleared)
         # The optional game-over penalty belongs to training, not the Tetris score.
         training_reward = _training_reward(
-            result.reward,
+            line_clear_reward,
             result.done,
             agent.config.terminal_penalty,
         )
@@ -761,6 +767,11 @@ def _training_reward(
 ) -> float:
     """Add the configured training-only penalty when the game ends."""
     return score_reward + terminal_penalty if done else float(score_reward)
+
+
+def _line_clear_reward(lines_cleared: int) -> int:
+    """Return the level-independent score PPO learns from for cleared lines."""
+    return LINE_SCORES.get(lines_cleared, 0)
 
 
 def _bottom_up_reward(

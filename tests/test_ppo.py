@@ -11,6 +11,7 @@ from training.reinforcement.ppo.trainer import (
     PPOConfig,
     _bottom_up_potential,
     _bottom_up_reward,
+    _line_clear_reward,
 )
 
 
@@ -47,6 +48,12 @@ class PPOModelTests(unittest.TestCase):
     def test_default_collects_a_fixed_number_of_transitions(self) -> None:
         self.assertEqual(PPOConfig().rollout_steps, 1_024)
         self.assertEqual(PPOConfig().bottom_up_bias, 0.0)
+
+    def test_training_line_reward_keeps_standard_proportions(self) -> None:
+        self.assertEqual(
+            [_line_clear_reward(lines) for lines in range(5)],
+            [0, 40, 100, 300, 1_200],
+        )
 
     def test_bottom_up_hint_is_small_and_potential_based(self) -> None:
         empty = np.zeros((22, 10), dtype=np.uint8)

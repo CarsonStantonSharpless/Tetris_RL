@@ -24,8 +24,18 @@ class TrainingPlot:
         loss_axes, score_axes = self.axes
         loss_axes.clear()
         score_axes.clear()
-        loss_axes.plot(self.losses)
-        score_axes.plot(self.scores)
+        loss_axes.scatter(
+            range(len(self.losses)),
+            self.losses,
+            s=8,
+            color="tab:blue",
+        )
+        score_axes.scatter(
+            range(len(self.scores)),
+            self.scores,
+            s=8,
+            color="tab:orange",
+        )
         loss_axes.set(ylabel="Loss", title="Training loss")
         score_axes.set(xlabel="Game", ylabel="Score", title="Game score")
         self.figure.tight_layout()
@@ -39,12 +49,24 @@ class DQNTrainingPlot:
     """Display and save the metrics collected by a Double DQN run."""
 
     _PLOTS = (
-        ("loss", "Training loss", "Episode", "Mean loss"),
-        ("score", "Episode score", "Episode", "Score"),
-        ("epsilon", "Exploration rate", "Episode", "Epsilon"),
-        ("mean_q", "Mean selected Q value", "Episode", "Q value"),
-        ("replay_size", "Replay-buffer size", "Episode", "Transitions"),
-        ("evaluation_score", "Evaluation score", "Episode", "Mean score"),
+        ("loss", "Training loss", "Episode", "Mean loss", "tab:blue"),
+        ("score", "Episode score", "Episode", "Score", "tab:orange"),
+        ("epsilon", "Exploration rate", "Episode", "Epsilon", "tab:green"),
+        ("mean_q", "Mean selected Q value", "Episode", "Q value", "tab:red"),
+        (
+            "replay_size",
+            "Replay-buffer size",
+            "Episode",
+            "Transitions",
+            "tab:purple",
+        ),
+        (
+            "evaluation_score",
+            "Evaluation score",
+            "Episode",
+            "Mean score",
+            "tab:brown",
+        ),
     )
 
     def __init__(
@@ -62,7 +84,9 @@ class DQNTrainingPlot:
         self.display = display
         self.save_every = save_every
         self.updates = 0
-        self.metrics = {name: [] for name, *_ in self._PLOTS}
+        self.metrics: dict[str, list[float | int]] = {
+            name: [] for name, *_ in self._PLOTS
+        }
         self.figure, self.axes = plt.subplots(3, 2, figsize=(10, 9))
         self.figure.subplots_adjust(hspace=0.45, wspace=0.3)
         if display:
@@ -81,13 +105,14 @@ class DQNTrainingPlot:
 
     def save(self) -> None:
         """Redraw and write the accumulated metrics immediately."""
-        for axes, (name, title, xlabel, ylabel) in zip(
+        for axes, (name, title, xlabel, ylabel, color) in zip(
             self.axes.flat,
             self._PLOTS,
             strict=True,
         ):
             axes.clear()
-            axes.plot(self.metrics[name])
+            values = self.metrics[name]
+            axes.scatter(range(len(values)), values, s=8, color=color)
             axes.set(title=title, xlabel=xlabel, ylabel=ylabel)
 
         self.filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -105,29 +130,45 @@ class PPOTrainingPlot:
             "Mean completed-episode score",
             "PPO update",
             "Score",
+            "tab:blue",
         ),
-        ("loss", "Combined PPO loss", "PPO update", "Loss"),
-        ("policy_loss", "Actor policy loss", "PPO update", "Loss"),
-        ("value_loss", "Critic value loss", "PPO update", "Loss"),
+        ("loss", "Combined PPO loss", "PPO update", "Loss", "tab:orange"),
+        (
+            "policy_loss",
+            "Actor policy loss",
+            "PPO update",
+            "Loss",
+            "tab:green",
+        ),
+        ("value_loss", "Critic value loss", "PPO update", "Loss", "tab:red"),
         (
             "gae_advantage",
             "Mean absolute GAE advantage",
             "PPO update",
             "|Advantage|",
+            "tab:purple",
         ),
         (
             "td_residual",
             "Mean absolute TD residual",
             "PPO update",
             "|TD residual|",
+            "tab:brown",
         ),
-        ("entropy", "Actor entropy", "PPO update", "Entropy"),
-        ("clip_fraction", "PPO clip fraction", "PPO update", "Fraction"),
+        ("entropy", "Actor entropy", "PPO update", "Entropy", "tab:pink"),
+        (
+            "clip_fraction",
+            "PPO clip fraction",
+            "PPO update",
+            "Fraction",
+            "tab:gray",
+        ),
         (
             "evaluation_score",
             "Fixed-seed evaluation score",
             "PPO update",
             "Mean score",
+            "tab:olive",
         ),
     )
 
@@ -146,7 +187,9 @@ class PPOTrainingPlot:
         self.display = display
         self.save_every = save_every
         self.updates = 0
-        self.metrics = {name: [] for name, *_ in self._PLOTS}
+        self.metrics: dict[str, list[float | int]] = {
+            name: [] for name, *_ in self._PLOTS
+        }
         self.figure, self.axes = plt.subplots(3, 3, figsize=(13, 10))
         self.figure.subplots_adjust(hspace=0.5, wspace=0.35)
         if display:
@@ -165,14 +208,14 @@ class PPOTrainingPlot:
 
     def save(self) -> None:
         """Redraw and write every PPO panel immediately."""
-        for axes, (name, title, xlabel, ylabel) in zip(
+        for axes, (name, title, xlabel, ylabel, color) in zip(
             self.axes.flat,
             self._PLOTS,
             strict=True,
         ):
             axes.clear()
-            # A marker keeps even a one-episode teaching run visible.
-            axes.plot(self.metrics[name], marker=".")
+            values = self.metrics[name]
+            axes.scatter(range(len(values)), values, s=8, color=color)
             axes.set(title=title, xlabel=xlabel, ylabel=ylabel)
 
         self.filepath.parent.mkdir(parents=True, exist_ok=True)
