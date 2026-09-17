@@ -11,18 +11,8 @@ chooses from the same set of legal final placements.
 
 ## Where the project stands
 
-> **Active portfolio preview — about 95% of the intended implementation is in
-> place.**
+> **Not completely done yet, but I think its enough to show off for now. Mostly jsut need to get my hands on some more compute**
 
-The engine, terminal UI, placement search, training loops, checkpointing,
-fixed-seed evaluation, and playable neural policies all work. The current PPO
-run is promising, but this is not a finished research result. The remaining
-work is mostly compute-heavy: train multiple seeds, evaluate every method over
-the same larger seed set, report variance instead of isolated best runs, and
-tune PPO more deliberately.
-
-In other words, the system is ready to show and experiment with; the final
-comparison is not ready to claim yet.
 
 ![Nine-panel dashboard from the current PPO training run](assets/ppo-training.png)
 
